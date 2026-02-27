@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyOllama - 智能对话助手</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1>🤖 MyOllama</h1>
+            <button class="new-chat-btn" onclick="createNewConversation()">+ 新对话</button>
+        </div>
+        <div class="conversation-list" id="conversationList"></div>
+    </div>
+
+    <div class="main-content">
+        <div class="chat-header">
+            <div class="title" id="chatTitle">新对话</div>
+            <div class="actions">
+                <button class="action-btn fork" onclick="forkConversation()">🔄 Fork</button>
+                <button class="action-btn delete" onclick="deleteConversation()">🗑️ 删除</button>
+                <button class="action-btn stop" id="stopBtn" onclick="stopGeneration()" disabled>⏹️ 停止</button>
+            </div>
+        </div>
+        <div class="document-bar hidden" id="documentBar">
+            <div class="document-bar-content">
+                <span class="document-icon">📄</span>
+                <span class="document-name" id="documentName"></span>
+                <button class="document-remove-btn" onclick="removeDocument()">✕</button>
+            </div>
+        </div>
+        <div class="image-bar hidden" id="imageBar">
+            <div class="image-bar-content">
+                <span class="image-icon">🖼️</span>
+                <div class="image-preview-list" id="imagePreviewList"></div>
+                <button class="image-remove-btn" onclick="removeImages()">✕</button>
+            </div>
+        </div>
+        <div class="model-selector">
+            <label for="modelSelect">模型：</label>
+            <select id="modelSelect" onchange="onModelChange()">
+                <option value="qwen3:8b">qwen3:8b (文本)</option>
+                <option value="qwen3:14b">qwen3:14b (文本)</option>
+                <option value="deepseek-r1:8b">deepseek-r1:8b (文本)</option>
+                <option value="qwen3-vl:8b">qwen3-vl:8b (多模态)</option>
+            </select>
+        </div>
+        <div class="messages-container" id="messagesContainer"></div>
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea id="messageInput" placeholder="输入消息..." onkeydown="handleKeyDown(event)"></textarea>
+                <button id="sendBtn" onclick="sendMessage()">发送</button>
+            </div>
+            <div class="button-group">
+                <button id="imageBtn" class="upload-btn" onclick="document.getElementById('imageInput').click()">
+                    <span>🖼️</span>
+                    <span>上传图片</span>
+                </button>
+                <button id="screenshotBtn" class="upload-btn" onclick="takeScreenshot()">
+                    <span>📸</span>
+                    <span>截图</span>
+                </button>
+                <button id="voiceBtn" class="voice-btn" onclick="toggleVoiceRecognition()">
+                    <span id="voiceIcon">🎤</span>
+                    <span id="voiceBtnText">开始语音输入</span>
+                </button>
+                <button id="ttsBtn" class="tts-btn" onclick="toggleTTS()">
+                    <span id="ttsIcon">🔇</span>
+                    <span id="ttsBtnText">语音朗读</span>
+                </button>
+                <button id="uploadBtn" class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    <span>📤</span>
+                    <span>上传文档</span>
+                </button>
+                <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+                <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display: none;" onchange="uploadFile(event)">
+            </div>
+        </div>
+        <div class="status-bar">
+            <span id="statusText">就绪</span>
+            <button class="config-btn" onclick="openConfigModal()">⚙️ 配置</button>
+        </div>
+    </div>
+
+    <div class="modal" id="configModal">
+        <div class="modal-content">
+            <h2>配置</h2>
+            <div class="form-group">
+                <label>上下文轮数</label>
+                <input type="number" id="maxContextTurns" min="1" max="20" value="5">
+            </div>
+            <div class="form-group">
+                <label>语音识别语言</label>
+                <select id="speechRecognitionLang">
+                    <option value="zh-CN">中文</option>
+                    <option value="en-US">英文</option>
+                    <option value="fr-FR">法文</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>语音朗读语言</label>
+                <select id="speechSynthesisLang">
+                    <option value="zh-CN">中文</option>
+                    <option value="en-US">英文</option>
+                    <option value="fr-FR">法文</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>语音输入最长时长（秒）</label>
+                <input type="number" id="maxRecordingTime" min="5" max="120" value="30">
+            </div>
+            <div class="actions">
+                <button class="cancel-btn" onclick="closeConfigModal()">取消</button>
+                <button class="save-btn" onclick="saveConfig()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

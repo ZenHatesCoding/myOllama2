@@ -1,0 +1,12 @@
+flask
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-ollama
+python-docx
+pypdf
+faiss-cpu
+requests
+mss
+httpx
+pydantic
