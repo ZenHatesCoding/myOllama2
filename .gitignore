@@ -29,6 +29,7 @@ htmlcov/
 .DS_Store
 
 conversations/*.md
+conversations/index.json
 !conversations/.gitkeep
 assets/
 vector_stores/
