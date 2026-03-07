@@ -3,6 +3,7 @@ langchain-community
 langchain-core
 langchain-text-splitters
 langchain-ollama
+langgraph
 python-docx
 pypdf
 faiss-cpu

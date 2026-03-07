@@ -4,6 +4,7 @@ import os
 import tempfile
 import uuid
 import asyncio
+import time
 from PIL import Image
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
@@ -14,8 +15,6 @@ from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from models import state
-from mcp import MCPManager, NewsMCP
-
 
 embedding_model = OllamaEmbeddings(model="nomic-embed-text", base_url="http://localhost:11434")
 llm_model = ChatOllama(
@@ -23,9 +22,6 @@ llm_model = ChatOllama(
     base_url="http://localhost:11434",
     temperature=0.7
 )
-
-mcp_manager = MCPManager()
-mcp_manager.register_mcp(NewsMCP(api_key="f01f4e17ae8680f4ad7c16904e0a3d21"))
 
 
 def load_document(file_path, file_type):
@@ -155,6 +151,9 @@ def prepare_messages(conversation, query, system_prompt, images=None):
 
 async def generate_answer(query, model_name=None):
     from langchain_ollama import ChatOllama
+    from agent import stream_graph
+    from tools import news_toolkit
+    import json
     
     try:
         conversation = state.get_current_conversation()
@@ -162,13 +161,89 @@ async def generate_answer(query, model_name=None):
         if model_name is None:
             model_name = "qwen3.5:4b"
         
-        print(f"开始生成回答，模型: {model_name}")
+        print(f"开始生成回答，模型: {model_name} (LangGraph)")
         
-        mcp_result = await mcp_manager.detect_intent_and_execute(query)
+        llm_for_intent = ChatOllama(
+            model="qwen3:8b",
+            base_url="http://localhost:11434",
+            temperature=0.3
+        )
+        
+        tools_schema = """可用工具列表：
+
+工具名称: get_headlines
+描述: 获取头条新闻
+参数:
+  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
+
+工具名称: get_news_by_type
+描述: 按类型获取新闻
+参数:
+  - news_type: string (必需) - 新闻类型，可选值：头条、社会、国内、国际、娱乐、体育、科技、财经
+  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
+
+工具名称: search_news
+描述: 根据关键词搜索新闻
+参数:
+  - keyword: string (必需) - 搜索关键词
+  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
+"""
+        
+        system_prompt = f"""你是一个智能助手，负责判断用户是否需要使用工具来完成任务。
+
+{tools_schema}
+
+请分析用户的输入，判断是否需要使用上述工具。
+如果需要使用工具，请返回JSON格式：
+{{
+    "need_tool": true,
+    "tool_name": "工具名称",
+    "parameters": {{
+        "参数名": "参数值"
+    }}
+}}
+
+如果不需要使用工具，请返回：
+{{
+    "need_tool": false,
+    "reason": "原因说明"
+}}
+
+只返回JSON，不要有其他内容。"""
+        
+        mcp_result = None
+        try:
+            response = llm_for_intent.invoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=query)
+            ])
+            result_text = response.content.strip()
+            result_text = result_text.replace('```json', '').replace('```', '').strip()
+            intent = json.loads(result_text)
+            
+            if intent.get("need_tool"):
+                tool_name = intent.get("tool_name")
+                parameters = intent.get("parameters", {})
+                
+                if tool_name == "get_headlines":
+                    mcp_result = news_toolkit.get_headlines(parameters.get("page_size", 10))
+                elif tool_name == "get_news_by_type":
+                    mcp_result = news_toolkit.get_news_by_type(
+                        parameters.get("news_type", "头条"),
+                        parameters.get("page_size", 10)
+                    )
+                elif tool_name == "search_news":
+                    mcp_result = news_toolkit.search_news(
+                        parameters.get("keyword", ""),
+                        parameters.get("page_size", 10)
+                    )
+        except Exception as e:
+            print(f"工具意图检测失败: {str(e)}")
+        
         if mcp_result and mcp_result.get("success"):
             tool_name = mcp_result.get("tool_name", "")
             formatted_text = mcp_result.get("formatted_text", "")
-            print(f"MCP工具调用成功: {tool_name}")
+            print(f"LangGraph Tool 调用成功: {tool_name}")
             
             tool_display_names = {
                 "get_headlines": "头条新闻",
@@ -187,7 +262,6 @@ async def generate_answer(query, model_name=None):
                         break
                     chunk = formatted_text[i:i+10]
                     state.response_queue.put(("chunk", chunk))
-                    import time
                     time.sleep(0.01)
                 
                 if not state.should_stop:

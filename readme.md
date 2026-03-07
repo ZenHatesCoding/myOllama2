@@ -1,11 +1,11 @@
 # MyOllama - 智能对话助手
 
-基于 Flask 和 Ollama 的智能对话助手，支持文档问答、多模型选择、语音交互、截图识别等功能。
+基于 Flask、LangGraph 和 Ollama 的智能对话助手，支持文档问答、多模型选择、语音交互、截图识别等功能。
 
 ## 功能特性
 
 ### 核心功能
-- **多文档格式支持**：PDF、Word (.docx)、纯文本 (.txt)
+- **多文档格式支持**：PDF、Word (.docx)、纯文本
 - **图片上传**：支持图片上传和多模态问答
   - 支持上传多张图片
   - 图片显示缩略图预览
@@ -16,7 +16,7 @@
   - 全屏显示，鼠标拖拽选择区域
   - 按 ESC 键可取消截图
   - 截图自动上传到对话中
-- **智能问答**：基于 LangChain 和 Ollama 的文档问答系统
+- **智能问答**：基于 LangChain、LangGraph 和 Ollama 的文档问答系统
 - **流式输出**：实时显示生成内容，提供流畅的用户体验
 - **中断操作**：可随时停止正在生成的回答
 
@@ -55,8 +55,8 @@
 
 ### 配置选项
 - **上下文轮数**：控制对话历史保留的轮数（默认5轮）
-- **语音识别语言**：支持中文（zh-CN）和英文（en-US）
-- **语音合成语言**：支持中文（zh-CN）和英文（en-US）
+- **语音识别语言**：支持中文和英文
+- **语音合成语言**：支持中文和英文
 - **录音时长限制**：可配置语音输入的最长时长（5-120秒）
 
 ### 界面优化
@@ -184,7 +184,7 @@ python myOllama\app.py
 
 ### 语音识别功能说明
 
-- **支持语言**：中文（zh-CN）和英文（en-US）
+- **支持语言**：中文和英文
 - **录音限制**：可在配置中设置最长时长（5-120秒），超时自动停止
 - **使用方式**：
   1. 点击"🎤 开始语音输入"按钮
@@ -198,7 +198,7 @@ python myOllama\app.py
 
 ### 语音朗读功能说明
 
-- **支持语言**：中文（zh-CN）和英文（en-US）
+- **支持语言**：中文和英文
 - **使用方式**：
   1. 点击"🔇 语音朗读"按钮开启语音朗读
   2. 开启后，新生成的回答会自动朗读
@@ -234,25 +234,33 @@ python myOllama\app.py
 myOllama/
 ├── app.py                 # Flask 应用主文件
 ├── requirements.txt       # Python 依赖
-├── run_flask.bat         # Windows 启动脚本
-├── readme.md             # 项目说明文档
-├── screenshot.py         # 截图功能模块
-├── models.py             # 数据模型
-├── routes.py            # API 路由
-├── utils.py             # 工具函数
+├── run_flask.bat          # Windows 启动脚本
+├── readme.md              # 项目说明文档
+├── screenshot.py          # 截图功能模块
+├── models.py              # 数据模型
+├── routes.py              # API 路由
+├── utils.py               # 工具函数
+├── graph.py               # LangGraph State 定义
+├── tools.py               # LangGraph Tool 定义
+├── agent.py               # LangGraph Agent 构建
+├── mcp/                   # MCP 模块（已弃用，保留兼容）
+│   ├── __init__.py
+│   ├── base.py
+│   ├── manager.py
+│   └── news_mcp.py
 ├── static/
 │   ├── css/
-│   │   └── style.css     # 样式文件
+│   │   └── style.css      # 样式文件
 │   └── js/
-│       └── app.js        # 前端 JavaScript
+│       └── app.js         # 前端 JavaScript
 └── templates/
-    └── index.html        # 前端页面
+    └── index.html         # 前端页面
 ```
 
 ## 技术栈
 
 - **后端**: Flask
-- **AI/ML**: LangChain, Ollama
+- **AI/ML**: LangChain, LangGraph, Ollama
 - **向量存储**: FAISS
 - **文档处理**: PyPDFLoader, python-docx
 - **截图功能**: mss, tkinter, PIL
@@ -260,6 +268,39 @@ myOllama/
 - **Markdown 渲染**: marked.js
 - **语音识别**: Web Speech API - SpeechRecognition（浏览器原生，无需额外依赖）
 - **语音合成**: Web Speech API - SpeechSynthesis（浏览器原生，无需额外依赖）
+
+## 架构说明
+
+### LangGraph 架构
+
+项目使用 LangGraph 作为核心编排框架，实现了模块化的 Agent 架构：
+
+```
+用户请求
+    ↓
+┌─────────────────────────────────────────┐
+│           LangGraph StateGraph           │
+│  ┌──────────────┐  ┌──────────────┐      │
+│  │ detect_tool  │→ │ retrieve_doc │      │
+│  │  (工具检测)   │  │  (文档检索)   │      │
+│  └──────────────┘  └──────────────┘      │
+│          ↓                ↓               │
+│  ┌──────────────────────────────┐        │
+│  │         generate             │        │
+│  │        (生成回答)             │        │
+│  └──────────────────────────────┘        │
+└─────────────────────────────────────────┘
+    ↓
+流式输出 → 前端显示
+```
+
+### Tool 系统
+
+使用 LangGraph 的 `@tool` 装饰器定义工具，支持动态扩展：
+
+- `get_headlines`: 获取头条新闻
+- `get_news_by_type`: 按类型获取新闻
+- `search_news`: 搜索新闻
 
 ## 注意事项
 
@@ -367,6 +408,23 @@ A:
 5. 使用截图功能提供视觉信息
 
 ## 更新日志
+
+### v5.0.0
+- 重构为 LangGraph 架构
+  - 引入 LangGraph 作为核心编排框架
+  - 使用 StateGraph 管理对话状态
+  - 实现 detect_tool → retrieve_document → generate 的节点流程
+- 迁移 MCP 到 LangGraph Tool
+  - 使用 `@tool` 装饰器定义工具
+  - 新闻工具（get_headlines, get_news_by_type, search_news）迁移完成
+  - 为后续 Skill 扩展奠定基础
+- 新增文件
+  - `graph.py`: LangGraph State 定义
+  - `tools.py`: LangGraph Tool 定义
+  - `agent.py`: LangGraph Agent 构建和执行
+- 代码优化
+  - 移除旧的 MCP Manager 依赖
+  - 统一使用 LangGraph Tool 机制
 
 ### v4.0.0
 - 添加截图识别功能
