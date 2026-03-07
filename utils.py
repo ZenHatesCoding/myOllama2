@@ -15,10 +15,11 @@ from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from models import state
+from history_rag import history_rag
 
 embedding_model = OllamaEmbeddings(model="nomic-embed-text", base_url="http://localhost:11434")
 llm_model = ChatOllama(
-    model="qwen3:8b",
+    model="qwen3.5:4b",
     base_url="http://localhost:11434",
     temperature=0.7
 )
@@ -111,6 +112,10 @@ def prepare_messages(conversation, query, system_prompt, images=None):
         
         if conversation.summary:
             messages.append(SystemMessage(content=f"之前的对话摘要：{conversation.summary}"))
+        
+        history_context = history_rag.get_context_for_query(query, max_blocks=3)
+        if history_context:
+            messages.append(SystemMessage(content=history_context))
         
         recent_messages = conversation.messages[-state.max_context_turns * 2:]
         for msg in recent_messages:
@@ -267,6 +272,8 @@ async def generate_answer(query, model_name=None):
                 if not state.should_stop:
                     conversation.add_message("user", query)
                     conversation.add_message("assistant", full_text)
+                    state.persist_message("user", query)
+                    state.persist_message("assistant", full_text)
                     auto_name_conversation(conversation)
                     state.response_queue.put(("done", ""))
                 else:
@@ -312,6 +319,8 @@ async def generate_answer(query, model_name=None):
         if not state.should_stop:
             conversation.add_message("user", query)
             conversation.add_message("assistant", output_content)
+            state.persist_message("user", query)
+            state.persist_message("assistant", output_content)
             auto_name_conversation(conversation)
             state.response_queue.put(("done", output_content))
         else:
@@ -334,9 +343,12 @@ def auto_name_conversation(conversation):
                 if msg.role == "user":
                     name = msg.content[:20] + ("..." if len(msg.content) > 20 else "")
                     conversation.name = name
+                    state.persist_conversation_name(name)
                     break
         
         if len(conversation.messages) >= 2:
             summary = generate_summary(conversation.messages)
             if summary:
                 conversation.name = summary[:30] + ("..." if len(summary) > 30 else "")
+                state.persist_conversation_name(conversation.name)
+                state.persist_summary(summary)

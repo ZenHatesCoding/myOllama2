@@ -10,7 +10,7 @@ let currentConfig = {
     max_recording_time: 30
 };
 
-let currentModel = 'qwen3:8b';
+let currentModel = 'qwen3.5:9b';
 
 let recognition = null;
 let isRecording = false;

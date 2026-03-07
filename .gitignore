@@ -27,3 +27,8 @@ env/
 htmlcov/
 *.log
 .DS_Store
+
+conversations/*.md
+!conversations/.gitkeep
+assets/
+vector_stores/
