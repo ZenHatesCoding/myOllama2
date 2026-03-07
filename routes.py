@@ -266,7 +266,7 @@ def register_routes(app):
         
         data = request.json
         query = data.get('query', '').strip()
-        model_name = data.get('model', 'qwen3:8b')
+        model_name = data.get('model', 'qwen3.5:4b')
         images = data.get('images', [])
         
         if not query and not images:

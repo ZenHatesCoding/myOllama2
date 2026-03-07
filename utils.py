@@ -160,7 +160,7 @@ async def generate_answer(query, model_name=None):
         conversation = state.get_current_conversation()
         
         if model_name is None:
-            model_name = "qwen3:8b"
+            model_name = "qwen3.5:4b"
         
         print(f"开始生成回答，模型: {model_name}")
         

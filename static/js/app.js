@@ -333,11 +333,11 @@ function renderMessages(messages) {
         const date = new Date(msg.timestamp);
         const timeStr = date.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
-        let content;
+        let content = msg.content || '';
         if (msg.role === 'assistant') {
-            content = marked.parse(msg.content);
+            content = marked.parse(content);
         } else {
-            content = escapeHtml(msg.content);
+            content = escapeHtml(content);
         }
 
         messageDiv.innerHTML = `
@@ -483,6 +483,9 @@ function startStreaming() {
             stopStreaming();
             loadConversations();
             updateConversationTitle();
+            if (currentConversationId) {
+                loadMessages(currentConversationId);
+            }
         } else if (data.startsWith('[ERROR]')) {
             const errorMsg = data.substring(7);
             alert(errorMsg);
@@ -855,6 +858,8 @@ function removeImages() {
         .catch(error => console.error('移除图片失败:', error));
 }
 
+const multimodalModels = ['qwen3-vl:8b', 'qwen3.5:0.8b', 'qwen3.5:4b', 'qwen3.5:9b'];
+
 function updateModelForImages() {
     const imageBar = document.getElementById('imageBar');
     const modelSelect = document.getElementById('modelSelect');
@@ -862,11 +867,14 @@ function updateModelForImages() {
     if (!imageBar.classList.contains('hidden')) {
         const multimodalOption = modelSelect.querySelector('option[value="qwen3-vl:8b"]');
         if (multimodalOption) {
-            modelSelect.value = 'qwen3-vl:8b';
-            currentModel = 'qwen3-vl:8b';
+            const currentIsMultimodal = multimodalModels.includes(currentModel);
+            if (!currentIsMultimodal) {
+                modelSelect.value = 'qwen3-vl:8b';
+                currentModel = 'qwen3-vl:8b';
+            }
             
             Array.from(modelSelect.options).forEach(option => {
-                if (option.value !== 'qwen3-vl:8b') {
+                if (!multimodalModels.includes(option.value)) {
                     option.disabled = true;
                 }
             });
