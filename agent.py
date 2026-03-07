@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 
 from graph import GraphState, create_initial_state
 from tools import get_all_tools, news_toolkit
+from document_tools import document_tools, get_document_summary, search_document, expand_context, get_document_outline
 from models import state
 
 
@@ -54,7 +55,7 @@ def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str,
 
 
 def build_tools_schema() -> str:
-    tools = get_all_tools()
+    tools = get_all_tools() + document_tools
     schema = "可用工具列表：\n\n"
     for tool in tools:
         schema += f"工具名称: {tool.name}\n"
@@ -80,7 +81,7 @@ def node_detect_tool(state: GraphState) -> dict:
         return {"mcp_result": None}
     
     llm = ChatOllama(
-        model="qwen3:8b",
+        model="qwen3.5:4b",
         base_url="http://localhost:11434",
         temperature=0.3
     )
@@ -105,6 +106,20 @@ def node_detect_tool(state: GraphState) -> dict:
                 parameters.get("keyword", ""),
                 parameters.get("page_size", 10)
             )
+        elif tool_name == "get_document_summary":
+            result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_summary.invoke({})}
+        elif tool_name == "search_document":
+            result = {"success": True, "tool_name": tool_name, "formatted_text": search_document.invoke({
+                "query": parameters.get("query", query),
+                "k": parameters.get("k", 4)
+            })}
+        elif tool_name == "expand_context":
+            result = {"success": True, "tool_name": tool_name, "formatted_text": expand_context.invoke({
+                "chunk_id": parameters.get("chunk_id", 0),
+                "direction": parameters.get("direction", "both")
+            })}
+        elif tool_name == "get_document_outline":
+            result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_outline.invoke({})}
         
         if result and result.get("success"):
             return {"mcp_result": result}
@@ -262,7 +277,11 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
                     tool_display_names = {
                         "get_headlines": "头条新闻",
                         "get_news_by_type": "分类新闻",
-                        "search_news": "新闻搜索"
+                        "search_news": "新闻搜索",
+                        "get_document_summary": "文档摘要",
+                        "search_document": "文档搜索",
+                        "expand_context": "扩展上下文",
+                        "get_document_outline": "文档大纲"
                     }
                     tool_display_name = tool_display_names.get(tool_name, tool_name)
                     yield f"📰 正在从{tool_display_name}获取信息...\n\n"

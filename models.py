@@ -31,6 +31,7 @@ class Conversation:
             self.created_at = datetime.fromisoformat(from_persisted["created_at"]) if from_persisted.get("created_at") else datetime.now()
             self.updated_at = datetime.fromisoformat(from_persisted["updated_at"]) if from_persisted.get("updated_at") else datetime.now()
             self.document_file = from_persisted.get("document_file")
+            self.document_summary = from_persisted.get("document_summary")
             self.images = from_persisted.get("images", [])
             self.summary = from_persisted.get("summary")
             
@@ -45,11 +46,14 @@ class Conversation:
             self.updated_at = datetime.now()
             self.vector_store = None
             self.document_file = None
+            self.document_summary = None
+            self.document_chunks = []
             self.images = []
             self.messages = []
             self.summary = None
         
         self.vector_store = None
+        self.document_chunks = []
 
     def add_message(self, role, content, images=None):
         message = Message(role, content, images)

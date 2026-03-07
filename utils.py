@@ -16,6 +16,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from models import state
 from history_rag import history_rag
+from context_config import get_search_k
 
 embedding_model = OllamaEmbeddings(model="nomic-embed-text", base_url="http://localhost:11434")
 llm_model = ChatOllama(
@@ -289,9 +290,18 @@ async def generate_answer(query, model_name=None):
         )
         
         if conversation.vector_store:
-            relevant_docs = conversation.vector_store.similarity_search(query, k=4)
-            context = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else "无相关内容"
-            system_prompt = f"你是一个文档问答助手。仅基于以下内容回答问题：\n\n{context}"
+            system_prompt = "你是一个文档问答助手。"
+            
+            if conversation.document_summary:
+                system_prompt += f"\n\n【文档摘要】\n{conversation.document_summary}"
+            
+            search_k = get_search_k(model_name)
+            relevant_docs = conversation.vector_store.similarity_search(query, k=search_k)
+            if relevant_docs:
+                context = "\n\n".join([doc.page_content for doc in relevant_docs])
+                system_prompt += f"\n\n【相关文档片段】\n{context}"
+            
+            system_prompt += "\n\n请基于以上信息回答用户问题。如果信息不足，请说明。"
         else:
             system_prompt = "你是一个乐于助人的助手"
         

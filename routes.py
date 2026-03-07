@@ -10,7 +10,7 @@ from utils import (
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from utils import embedding_model
+from utils import embedding_model, llm_model
 
 
 def register_routes(app):
@@ -97,8 +97,29 @@ def register_routes(app):
             )
             document_chunks = text_splitter.split_documents(docs)
             
+            for i, chunk in enumerate(document_chunks):
+                chunk.metadata["chunk_index"] = i
+            
             conversation.vector_store = FAISS.from_documents(document_chunks, embedding_model)
             conversation.document_file = file.filename
+            conversation.document_chunks = document_chunks
+            
+            full_text = "\n".join([doc.page_content for doc in docs[:10]])
+            summary_prompt = f"""请用简洁的语言总结以下文档的主要内容，包括：
+1. 文档主题和目的
+2. 主要章节或内容结构
+3. 关键信息点
+
+文档内容（前5000字）：
+{full_text[:5000]}
+
+请用中文回答，控制在300字以内。"""
+            
+            try:
+                summary_response = llm_model.invoke(summary_prompt)
+                conversation.document_summary = summary_response.content.strip()
+            except Exception as e:
+                conversation.document_summary = f"文档《{file.filename}》，共 {len(document_chunks)} 个文本块"
             
             try:
                 os.unlink(temp_file_path)
@@ -108,7 +129,8 @@ def register_routes(app):
             return jsonify({
                 'success': True,
                 'message': f'{file_ext.upper()}文件解析完成，共生成 {len(document_chunks)} 个文本块',
-                'document_file': file.filename
+                'document_file': file.filename,
+                'document_summary': conversation.document_summary
             })
         except Exception as e:
             try:
@@ -124,6 +146,8 @@ def register_routes(app):
         conversation = state.get_current_conversation()
         conversation.vector_store = None
         conversation.document_file = None
+        conversation.document_summary = None
+        conversation.document_chunks = []
         return jsonify({'success': True, 'message': '文档已移除'})
 
 
