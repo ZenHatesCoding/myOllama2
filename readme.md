@@ -42,12 +42,15 @@
 
 ### 模型选择
 - **多模型支持**：
-  - qwen3:8b（默认）
-  - qwen3:14b
-  - deepseek-r1:8b
-  - qwen3-vl:8b（多模态模型，支持图片问答）
+  - qwen3:8b（文本）
+  - qwen3:14b（文本）
+  - deepseek-r1:8b（文本）
+  - qwen3-vl:8b（多模态，支持图片问答）
+  - qwen3.5:0.8b（多模态，支持图片问答）
+  - qwen3.5:4b（多模态，支持图片问答，默认）
+  - qwen3.5:9b（多模态，支持图片问答）
 - **灵活切换**：在主界面直接选择模型，每次提问使用当前选中的模型
-- **自动切换**：上传图片或截图时自动切换到多模态模型（qwen3-vl:8b）
+- **自动切换**：上传图片或截图时自动切换到多模态模型
 - **固定摘要模型**：摘要生成始终使用 qwen3:8b，确保稳定性
 
 ### 配置选项
@@ -67,7 +70,7 @@
 - Ollama 服务（运行在 http://localhost:11434）
 - 推荐使用的 Ollama 模型：
   - 嵌入模型：`nomic-embed-text`
-  - LLM 模型：`qwen3:8b`、`qwen3:14b`、`deepseek-r1:8b`
+  - LLM 模型：`qwen3:8b`、`qwen3:14b`、`deepseek-r1:8b`、`qwen3-vl:8b`、`qwen3.5:0.8b`、`qwen3.5:4b`、`qwen3.5:9b`
   - 多模态模型：`qwen3-vl:8b`（支持图片问答）
 - 浏览器要求：
   - **推荐使用 Microsoft Edge 浏览器**（完全支持语音功能，无需翻墙）
@@ -94,6 +97,9 @@ ollama pull qwen3:8b
 ollama pull qwen3:14b
 ollama pull deepseek-r1:8b
 ollama pull qwen3-vl:8b
+ollama pull qwen3.5:0.8b
+ollama pull qwen3.5:4b
+ollama pull qwen3.5:9b
 ```
 
 ## 使用方法
@@ -141,7 +147,7 @@ python myOllama\app.py
 
 5. **选择模型**：
    - 在模型选择下拉框中选择你想要的模型
-   - 可选模型：qwen3:8b、qwen3:14b、deepseek-r1:8b、qwen3-vl:8b
+   - 可选模型：qwen3:8b、qwen3:14b、deepseek-r1:8b、qwen3-vl:8b、qwen3.5:0.8b、qwen3.5:4b、qwen3.5:9b
    - 上传图片或截图时自动切换到多模态模型
    - 可以随时切换模型（有图片时只能使用多模态模型）
 
