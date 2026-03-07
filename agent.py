@@ -251,7 +251,7 @@ def run_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = N
     initial_state = create_initial_state(query, model_name, images)
     executor = get_graph_executor()
     
-    result = executor.invoke(initial_state)
+    result = executor.invoke(initial_state, config={"configurable": {"thread_id": "default"}})
     
     return result.get("output_content", "")
 
@@ -264,7 +264,7 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
     
     mcp_result = None
     
-    for event in executor.stream(initial_state):
+    for event in executor.stream(initial_state, config={"configurable": {"thread_id": "default"}}):
         if app_state.should_stop:
             yield "操作已中断"
             return

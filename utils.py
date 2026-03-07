@@ -156,10 +156,9 @@ def prepare_messages(conversation, query, system_prompt, images=None):
 
 
 async def generate_answer(query, model_name=None):
-    from langchain_ollama import ChatOllama
     from agent import stream_graph
     from tools import news_toolkit
-    import json
+    from document_tools import document_tools, get_document_summary, search_document, expand_context, get_document_outline
     
     try:
         conversation = state.get_current_conversation()
@@ -167,172 +166,29 @@ async def generate_answer(query, model_name=None):
         if model_name is None:
             model_name = "qwen3.5:4b"
         
-        print(f"开始生成回答，模型: {model_name} (LangGraph)")
+        print(f"开始生成回答，模型: {model_name} (LangGraph工作流)")
         
-        llm_for_intent = ChatOllama(
-            model="qwen3:8b",
-            base_url="http://localhost:11434",
-            temperature=0.3
-        )
-        
-        tools_schema = """可用工具列表：
-
-工具名称: get_headlines
-描述: 获取头条新闻
-参数:
-  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
-
-工具名称: get_news_by_type
-描述: 按类型获取新闻
-参数:
-  - news_type: string (必需) - 新闻类型，可选值：头条、社会、国内、国际、娱乐、体育、科技、财经
-  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
-
-工具名称: search_news
-描述: 根据关键词搜索新闻
-参数:
-  - keyword: string (必需) - 搜索关键词
-  - page_size: integer (可选) - 返回新闻数量，1-50，默认10
-"""
-        
-        system_prompt = f"""你是一个智能助手，负责判断用户是否需要使用工具来完成任务。
-
-{tools_schema}
-
-请分析用户的输入，判断是否需要使用上述工具。
-如果需要使用工具，请返回JSON格式：
-{{
-    "need_tool": true,
-    "tool_name": "工具名称",
-    "parameters": {{
-        "参数名": "参数值"
-    }}
-}}
-
-如果不需要使用工具，请返回：
-{{
-    "need_tool": false,
-    "reason": "原因说明"
-}}
-
-只返回JSON，不要有其他内容。"""
-        
-        mcp_result = None
-        try:
-            response = llm_for_intent.invoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=query)
-            ])
-            result_text = response.content.strip()
-            result_text = result_text.replace('```json', '').replace('```', '').strip()
-            intent = json.loads(result_text)
-            
-            if intent.get("need_tool"):
-                tool_name = intent.get("tool_name")
-                parameters = intent.get("parameters", {})
-                
-                if tool_name == "get_headlines":
-                    mcp_result = news_toolkit.get_headlines(parameters.get("page_size", 10))
-                elif tool_name == "get_news_by_type":
-                    mcp_result = news_toolkit.get_news_by_type(
-                        parameters.get("news_type", "头条"),
-                        parameters.get("page_size", 10)
-                    )
-                elif tool_name == "search_news":
-                    mcp_result = news_toolkit.search_news(
-                        parameters.get("keyword", ""),
-                        parameters.get("page_size", 10)
-                    )
-        except Exception as e:
-            print(f"工具意图检测失败: {str(e)}")
-        
-        if mcp_result and mcp_result.get("success"):
-            tool_name = mcp_result.get("tool_name", "")
-            formatted_text = mcp_result.get("formatted_text", "")
-            print(f"LangGraph Tool 调用成功: {tool_name}")
-            
-            tool_display_names = {
-                "get_headlines": "头条新闻",
-                "get_news_by_type": "分类新闻",
-                "search_news": "新闻搜索"
-            }
-            tool_display_name = tool_display_names.get(tool_name, tool_name)
-            
-            state.response_queue.put(("chunk", f"📰 正在从{tool_display_name}获取信息...\n\n"))
-            
-            if not state.should_stop:
-                full_text = f"📰 正在从{tool_display_name}获取信息...\n\n{formatted_text}"
-                
-                for i in range(0, len(formatted_text), 10):
-                    if state.should_stop:
-                        break
-                    chunk = formatted_text[i:i+10]
-                    state.response_queue.put(("chunk", chunk))
-                    time.sleep(0.01)
-                
-                if not state.should_stop:
-                    conversation.add_message("user", query)
-                    conversation.add_message("assistant", full_text)
-                    state.persist_message("user", query)
-                    state.persist_message("assistant", full_text)
-                    auto_name_conversation(conversation)
-                    state.response_queue.put(("done", ""))
-                else:
-                    state.response_queue.put(("error", "操作已中断"))
-            else:
-                state.response_queue.put(("error", "操作已中断"))
-            return
-        
-        llm = ChatOllama(
-            model=model_name,
-            base_url="http://localhost:11434",
-            temperature=0.7
-        )
-        
-        if conversation.vector_store:
-            system_prompt = "你是一个文档问答助手。"
-            
-            if conversation.document_summary:
-                system_prompt += f"\n\n【文档摘要】\n{conversation.document_summary}"
-            
-            search_k = get_search_k(model_name)
-            relevant_docs = conversation.vector_store.similarity_search(query, k=search_k)
-            if relevant_docs:
-                context = "\n\n".join([doc.page_content for doc in relevant_docs])
-                system_prompt += f"\n\n【相关文档片段】\n{context}"
-            
-            system_prompt += "\n\n请基于以上信息回答用户问题。如果信息不足，请说明。"
-        else:
-            system_prompt = "你是一个乐于助人的助手"
-        
-        if state.should_stop:
-            state.response_queue.put(("error", "操作已中断"))
-            return
+        conversation.add_message("user", query)
         
         images = conversation.images
-        print(f"图片数量: {len(images) if images else 0}")
         
-        messages = prepare_messages(conversation, query, system_prompt, images)
-        print(f"消息数量: {len(messages)}")
+        full_response = ""
         
-        output_content = ""
-        for chunk in llm.stream(messages):
+        for chunk in stream_graph(query, model_name, images):
             if state.should_stop:
-                output_content += "\n\n操作已中断"
+                full_response += "\n\n操作已中断"
                 state.response_queue.put(("chunk", "\n\n操作已中断"))
                 break
             
-            chunk_text = str(chunk.content)
-            output_content += chunk_text
-            state.response_queue.put(("chunk", chunk_text))
-
+            full_response += chunk
+            state.response_queue.put(("chunk", chunk))
+        
         if not state.should_stop:
-            conversation.add_message("user", query)
-            conversation.add_message("assistant", output_content)
+            conversation.add_message("assistant", full_response)
             state.persist_message("user", query)
-            state.persist_message("assistant", output_content)
+            state.persist_message("assistant", full_response)
             auto_name_conversation(conversation)
-            state.response_queue.put(("done", output_content))
+            state.response_queue.put(("done", ""))
         else:
             state.response_queue.put(("error", "操作已中断"))
 

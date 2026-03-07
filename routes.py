@@ -1,6 +1,7 @@
 import threading
 import os
 import tempfile
+import queue
 from flask import request, jsonify, Response, render_template
 from models import state
 from utils import (
@@ -71,6 +72,9 @@ def register_routes(app):
 
     @app.route('/api/documents/upload', methods=['POST'])
     def upload_file():
+        if state.is_generating:
+            return jsonify({'error': '正在处理中，请稍候...'}), 400
+        
         conversation = state.get_current_conversation()
         
         if 'file' not in request.files:
@@ -86,26 +90,66 @@ def register_routes(app):
             temp_file.close()
             file.save(temp_file_path)
             
+            state.is_generating = True
+            state.should_stop = False
+            state.response_queue = queue.Queue()
+            
             file_ext = file.filename.rsplit('.', 1)[1].lower()
+            filename = file.filename
             
-            docs = load_document(temp_file_path, file_ext)
-            
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=500,
-                chunk_overlap=50,
-                length_function=len
-            )
-            document_chunks = text_splitter.split_documents(docs)
-            
-            for i, chunk in enumerate(document_chunks):
-                chunk.metadata["chunk_index"] = i
-            
-            conversation.vector_store = FAISS.from_documents(document_chunks, embedding_model)
-            conversation.document_file = file.filename
-            conversation.document_chunks = document_chunks
-            
-            full_text = "\n".join([doc.page_content for doc in docs[:10]])
-            summary_prompt = f"""请用简洁的语言总结以下文档的主要内容，包括：
+            def process_document_async():
+                try:
+                    state.response_queue.put(("progress", "正在解析文档..."))
+                    
+                    if state.should_stop:
+                        state.response_queue.put(("error", "操作已中断"))
+                        return
+                    
+                    docs = load_document(temp_file_path, file_ext)
+                    
+                    state.response_queue.put(("progress", f"文档已解析，正在分块..."))
+                    
+                    if state.should_stop:
+                        state.response_queue.put(("error", "操作已中断"))
+                        return
+                    
+                    text_splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=500,
+                        chunk_overlap=50,
+                        length_function=len
+                    )
+                    document_chunks = text_splitter.split_documents(docs)
+                    
+                    total_chunks = len(document_chunks)
+                    state.response_queue.put(("progress", f"已分块 {total_chunks} 个，正在建立索引..."))
+                    
+                    if state.should_stop:
+                        state.response_queue.put(("error", "操作已中断"))
+                        return
+                    
+                    for i, chunk in enumerate(document_chunks):
+                        chunk.metadata["chunk_index"] = i
+                    
+                    conversation.vector_store = FAISS.from_documents(document_chunks, embedding_model)
+                    conversation.document_file = filename
+                    conversation.document_chunks = document_chunks
+                    
+                    conversation.add_message("user", f"上传文档《{filename}》，请总结")
+                    state.persist_message("user", f"上传文档《{filename}》，请总结")
+                    
+                    try:
+                        os.unlink(temp_file_path)
+                    except:
+                        pass
+                    
+                    state.response_queue.put(("progress", "正在生成摘要..."))
+                    
+                    if state.should_stop:
+                        state.response_queue.put(("error", "操作已中断"))
+                        return
+                    
+                    full_text = "\n".join([doc.page_content for doc in docs[:10]])
+                    summary_prompt = f"""请用简洁的语言总结以下文档的主要内容，包括：
 1. 文档主题和目的
 2. 主要章节或内容结构
 3. 关键信息点
@@ -114,24 +158,47 @@ def register_routes(app):
 {full_text[:5000]}
 
 请用中文回答，控制在300字以内。"""
+                    
+                    from langchain_ollama import ChatOllama
+                    llm = ChatOllama(
+                        model="qwen3.5:4b",
+                        base_url="http://localhost:11434",
+                        temperature=0.7
+                    )
+                    
+                    summary_text = ""
+                    for chunk in llm.stream([{"role": "user", "content": summary_prompt}]):
+                        if state.should_stop:
+                            summary_text += "\n\n操作已中断"
+                            break
+                        chunk_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                        summary_text += chunk_text
+                        state.response_queue.put(("chunk", chunk_text))
+                    
+                    if not state.should_stop:
+                        conversation.document_summary = summary_text
+                        conversation.add_message("assistant", summary_text)
+                        state.persist_message("assistant", summary_text)
+                    
+                    state.response_queue.put(("done", f"{file_ext.upper()}文件解析完成，共生成 {total_chunks} 个文本块"))
+                    
+                except Exception as e:
+                    state.response_queue.put(("error", f"处理失败：{str(e)}"))
+                finally:
+                    state.is_generating = False
             
-            try:
-                summary_response = llm_model.invoke(summary_prompt)
-                conversation.document_summary = summary_response.content.strip()
-            except Exception as e:
-                conversation.document_summary = f"文档《{file.filename}》，共 {len(document_chunks)} 个文本块"
-            
-            try:
-                os.unlink(temp_file_path)
-            except:
-                pass
+            thread = threading.Thread(target=process_document_async)
+            thread.daemon = True
+            thread.start()
             
             return jsonify({
                 'success': True,
-                'message': f'{file_ext.upper()}文件解析完成，共生成 {len(document_chunks)} 个文本块',
-                'document_file': file.filename,
-                'document_summary': conversation.document_summary
+                'message': '开始解析文档',
+                'conversation_id': conversation.id
             })
+            
+        except Exception as e:
+            return jsonify({'error': f'上传失败：{str(e)}'}), 500
         except Exception as e:
             try:
                 if 'temp_file_path' in locals():
@@ -146,8 +213,9 @@ def register_routes(app):
         conversation = state.get_current_conversation()
         conversation.vector_store = None
         conversation.document_file = None
-        conversation.document_summary = None
+        conversation.summary = None
         conversation.document_chunks = []
+        
         return jsonify({'success': True, 'message': '文档已移除'})
 
 
@@ -340,6 +408,8 @@ def register_routes(app):
                     msg_type, content = state.response_queue.get(timeout=0.1)
                     if msg_type == "chunk":
                         yield f"data: {content}\n\n"
+                    elif msg_type == "progress":
+                        yield f"data: [PROGRESS]{content}\n\n"
                     elif msg_type == "done":
                         yield f"data: [DONE]\n\n"
                         break

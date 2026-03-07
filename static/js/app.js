@@ -28,6 +28,31 @@ function init() {
     loadConfig();
     initSpeechRecognition();
     initTTS();
+    startStatusPolling();
+}
+
+function startStatusPolling() {
+    setInterval(() => {
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                const isGenerating = data.is_generating;
+                const sendBtn = document.getElementById('sendBtn');
+                const stopBtn = document.getElementById('stopBtn');
+                const messageInput = document.getElementById('messageInput');
+                const statusText = document.getElementById('statusText');
+                
+                if (sendBtn && stopBtn && messageInput) {
+                    sendBtn.disabled = isGenerating;
+                    stopBtn.disabled = !isGenerating;
+                    messageInput.disabled = isGenerating;
+                }
+                if (statusText) {
+                    statusText.textContent = isGenerating ? '生成中...' : '就绪';
+                }
+            })
+            .catch(error => console.error('获取状态失败:', error));
+    }, 500);
 }
 
 function checkSpeechSupport() {
@@ -329,13 +354,18 @@ function renderMessages(messages) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${msg.role}`;
         
-        const avatar = msg.role === 'user' ? '👤' : '🤖';
+        let avatar = '🤖';
+        if (msg.role === 'user') avatar = '👤';
+        else if (msg.role === 'system') avatar = 'ℹ️';
+        
         const date = new Date(msg.timestamp);
         const timeStr = date.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
         let content = msg.content || '';
         if (msg.role === 'assistant') {
             content = marked.parse(content);
+        } else if (msg.role === 'system') {
+            content = `<span class="system-message">${escapeHtml(content)}</span>`;
         } else {
             content = escapeHtml(content);
         }
@@ -585,6 +615,16 @@ function uploadFile(event) {
     const formData = new FormData();
     formData.append('file', file);
 
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    progressBar.classList.remove('hidden');
+    progressText.textContent = '正在上传文档...';
+    progressFill.style.width = '10%';
+    uploadBtn.disabled = true;
+
     fetch('/api/documents/upload', {
         method: 'POST',
         body: formData
@@ -592,18 +632,107 @@ function uploadFile(event) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert(data.message);
-                updateDocumentInfo(data.document_file);
+                startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn);
             } else {
+                progressBar.classList.add('hidden');
+                uploadBtn.disabled = false;
                 alert(data.error);
             }
         })
         .catch(error => {
             console.error('上传文件失败:', error);
+            progressBar.classList.add('hidden');
+            uploadBtn.disabled = false;
             alert('上传文件失败');
         });
 
     event.target.value = '';
+}
+
+function startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn) {
+    const eventSource = new EventSource('/api/stream');
+    let streamingContent = '';
+    let streamingMessageElement = null;
+    
+    function appendChunk(text) {
+        if (!streamingMessageElement) {
+            const container = document.getElementById('messagesContainer');
+            streamingMessageElement = document.createElement('div');
+            streamingMessageElement.className = 'message assistant streaming';
+            streamingMessageElement.innerHTML = `
+                <div class="avatar">🤖</div>
+                <div class="content"></div>
+            `;
+            container.appendChild(streamingMessageElement);
+        }
+        streamingContent += text;
+        const contentDiv = streamingMessageElement.querySelector('.content');
+        try {
+            contentDiv.innerHTML = marked.parse(streamingContent);
+        } catch (e) {
+            contentDiv.textContent = streamingContent;
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    eventSource.onmessage = function(e) {
+        const data = e.data;
+        
+        if (data.startsWith('[PROGRESS]')) {
+            const message = data.replace('[PROGRESS]', '');
+            progressText.textContent = message;
+            
+            if (message.includes('解析')) {
+                progressFill.style.width = '30%';
+            } else if (message.includes('分块')) {
+                progressFill.style.width = '50%';
+            } else if (message.includes('索引')) {
+                progressFill.style.width = '70%';
+            } else if (message.includes('摘要')) {
+                progressFill.style.width = '90%';
+            }
+        } else if (data.startsWith('[chunk]')) {
+            const chunk = data.substring(7);
+            appendChunk(chunk);
+        } else if (data.startsWith('[DONE]')) {
+            eventSource.close();
+            progressFill.style.width = '100%';
+            isGenerating = false;
+            
+            if (streamingMessageElement) {
+                streamingMessageElement.classList.remove('streaming');
+            }
+            
+            setTimeout(() => {
+                progressBar.classList.add('hidden');
+                progressFill.style.width = '0%';
+                uploadBtn.disabled = false;
+            }, 1000);
+            
+            loadMessages();
+            updateUIState();
+        } else if (data.startsWith('[ERROR]')) {
+            const errorMsg = data.replace('[ERROR]', '');
+            eventSource.close();
+            
+            progressBar.classList.add('hidden');
+            progressFill.style.width = '0%';
+            uploadBtn.disabled = false;
+            isGenerating = false;
+            updateUIState();
+            
+            alert(errorMsg);
+        }
+    };
+    
+    eventSource.onerror = function() {
+        eventSource.close();
+        progressBar.classList.add('hidden');
+        progressFill.style.width = '0%';
+        uploadBtn.disabled = false;
+        isGenerating = false;
+        updateUIState();
+    };
 }
 
 function removeDocument() {

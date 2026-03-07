@@ -208,7 +208,7 @@ class ConversationManager:
             
             metadata, body = self._parse_frontmatter(file_content)
             
-            role_label = "User" if role == "user" else "Assistant"
+            role_label = "User" if role == "user" else "Assistant" if role == "assistant" else "System"
             message_text = f"\n## {role_label}\n{content}\n"
             
             if images:
