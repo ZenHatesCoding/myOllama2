@@ -130,8 +130,9 @@ def register_routes(app):
                     for i, chunk in enumerate(document_chunks):
                         chunk.metadata["chunk_index"] = i
                     
-                    embedding = get_embedding_model(state.ollama_base_url)
-                    conversation.vector_store = FAISS.from_documents(document_chunks, embedding)
+                    if state.llm_provider == "ollama":
+                        embedding = get_embedding_model(state.ollama_base_url)
+                        conversation.vector_store = FAISS.from_documents(document_chunks, embedding)
                     conversation.document_file = filename
                     conversation.document_chunks = document_chunks
                     conversation.document_summary = None
@@ -424,6 +425,12 @@ def register_routes(app):
         return jsonify({
             'llm_provider': state.llm_provider,
             'ollama_base_url': state.ollama_base_url,
+            'openai_api_key': state.openai_api_key,
+            'openai_base_url': state.openai_base_url,
+            'openai_model': state.openai_model,
+            'anthropic_api_key': state.anthropic_api_key,
+            'anthropic_base_url': state.anthropic_base_url,
+            'anthropic_model': state.anthropic_model,
             'max_context_turns': state.max_context_turns,
             'speech_recognition_lang': state.speech_recognition_lang,
             'speech_synthesis_lang': state.speech_synthesis_lang,
@@ -437,6 +444,12 @@ def register_routes(app):
         
         llm_provider = data.get('llm_provider')
         ollama_base_url = data.get('ollama_base_url')
+        openai_api_key = data.get('openai_api_key')
+        openai_base_url = data.get('openai_base_url')
+        openai_model = data.get('openai_model')
+        anthropic_api_key = data.get('anthropic_api_key')
+        anthropic_base_url = data.get('anthropic_base_url')
+        anthropic_model = data.get('anthropic_model')
         max_turns = data.get('max_context_turns')
         speech_recognition_lang = data.get('speech_recognition_lang')
         speech_synthesis_lang = data.get('speech_synthesis_lang')
@@ -447,6 +460,20 @@ def register_routes(app):
         
         if ollama_base_url:
             state.ollama_base_url = ollama_base_url
+        
+        if openai_api_key is not None:
+            state.openai_api_key = openai_api_key
+        if openai_base_url is not None:
+            state.openai_base_url = openai_base_url
+        if openai_model is not None:
+            state.openai_model = openai_model
+        
+        if anthropic_api_key is not None:
+            state.anthropic_api_key = anthropic_api_key
+        if anthropic_base_url is not None:
+            state.anthropic_base_url = anthropic_base_url
+        if anthropic_model is not None:
+            state.anthropic_model = anthropic_model
         
         if max_turns is not None and isinstance(max_turns, int) and max_turns > 0:
             state.max_context_turns = max_turns
@@ -463,6 +490,12 @@ def register_routes(app):
         config = load_config()
         config['llm_provider'] = state.llm_provider
         config['ollama_base_url'] = state.ollama_base_url
+        config['openai_api_key'] = state.openai_api_key
+        config['openai_base_url'] = state.openai_base_url
+        config['openai_model'] = state.openai_model
+        config['anthropic_api_key'] = state.anthropic_api_key
+        config['anthropic_base_url'] = state.anthropic_base_url
+        config['anthropic_model'] = state.anthropic_model
         config['max_context_turns'] = state.max_context_turns
         config['speech_recognition_lang'] = state.speech_recognition_lang
         config['speech_synthesis_lang'] = state.speech_synthesis_lang

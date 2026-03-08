@@ -9,7 +9,13 @@ DEFAULT_CONFIG = {
     "max_context_turns": 5,
     "speech_recognition_lang": "zh-CN",
     "speech_synthesis_lang": "zh-CN",
-    "max_recording_time": 30
+    "max_recording_time": 30,
+    "openai_api_key": "",
+    "openai_base_url": "",
+    "openai_model": "",
+    "anthropic_api_key": "",
+    "anthropic_base_url": "",
+    "anthropic_model": ""
 }
 
 

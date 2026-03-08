@@ -94,6 +94,14 @@ class AppState:
         self.llm_provider = config.get("llm_provider", "ollama")
         self.ollama_base_url = config.get("ollama_base_url", "http://localhost:11434")
         
+        self.openai_api_key = config.get("openai_api_key", "")
+        self.openai_base_url = config.get("openai_base_url", "")
+        self.openai_model = config.get("openai_model", "")
+        
+        self.anthropic_api_key = config.get("anthropic_api_key", "")
+        self.anthropic_base_url = config.get("anthropic_base_url", "")
+        self.anthropic_model = config.get("anthropic_model", "")
+        
         self._load_from_persistence()
 
     def _load_from_persistence(self):
@@ -112,8 +120,9 @@ class AppState:
         if persisted_convs:
             self.current_conversation_id = persisted_convs[0]["id"]
         
-        from history_rag import history_rag
-        history_rag.build_all_index()
+        if self.llm_provider == "ollama":
+            from history_rag import history_rag
+            history_rag.build_all_index()
 
     def create_conversation(self):
         conv_data = conversation_manager.create_conversation()
@@ -140,8 +149,9 @@ class AppState:
             del self.conversations[conversation_id]
             
             conversation_manager.delete_conversation(conversation_id)
-            from history_rag import history_rag
-            history_rag.delete_conversation_index(conversation_id)
+            if self.llm_provider == "ollama":
+                from history_rag import history_rag
+                history_rag.delete_conversation_index(conversation_id)
             
             if self.current_conversation_id == conversation_id:
                 if self.conversations:
@@ -193,8 +203,9 @@ class AppState:
                 self.conversations[conversation_id] = conv
                 self.current_conversation_id = conversation_id
                 
-                from history_rag import history_rag
-                history_rag.build_index(conversation_id)
+                if self.llm_provider == "ollama":
+                    from history_rag import history_rag
+                    history_rag.build_index(conversation_id)
                 
                 return True
         
@@ -204,8 +215,9 @@ class AppState:
         conv = self.get_current_conversation()
         conversation_manager.append_message(conv.id, role, content, images)
         
-        from history_rag import history_rag
-        history_rag.build_index(conv.id)
+        if self.llm_provider == "ollama":
+            from history_rag import history_rag
+            history_rag.build_index(conv.id)
 
     def persist_conversation_name(self, name: str):
         conv = self.get_current_conversation()

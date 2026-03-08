@@ -510,7 +510,7 @@ function startStreaming() {
     eventSource.onmessage = function(event) {
         const data = event.data;
 
-        if (data === '[DONE]') {
+        if (data.startsWith('[DONE]')) {
             stopStreaming();
             loadConversations();
             updateConversationTitle();
@@ -521,8 +521,12 @@ function startStreaming() {
             const errorMsg = data.substring(7);
             alert(errorMsg);
             stopStreaming();
-        } else {
-            appendStreamingMessage(data);
+        } else if (data.startsWith('[chunk]')) {
+            const content = data.substring(7);
+            appendStreamingMessage(content);
+        } else if (data.startsWith('[PROGRESS]')) {
+            const progressMsg = data.substring(10);
+            console.log('Progress:', progressMsg);
         }
     };
 
@@ -839,6 +843,15 @@ function loadConfig() {
             currentConfig = data;
             document.getElementById('llmProvider').value = data.llm_provider || 'ollama';
             document.getElementById('ollamaBaseUrl').value = data.ollama_base_url || 'http://localhost:11434';
+            
+            document.getElementById('openaiBaseUrl').value = data.openai_base_url || '';
+            document.getElementById('openaiModel').value = data.openai_model || '';
+            document.getElementById('openaiApiKey').value = data.openai_api_key || '';
+            
+            document.getElementById('anthropicBaseUrl').value = data.anthropic_base_url || '';
+            document.getElementById('anthropicModel').value = data.anthropic_model || '';
+            document.getElementById('anthropicApiKey').value = data.anthropic_api_key || '';
+            
             document.getElementById('maxContextTurns').value = data.max_context_turns;
             document.getElementById('speechRecognitionLang').value = data.speech_recognition_lang || 'zh-CN';
             document.getElementById('speechSynthesisLang').value = data.speech_synthesis_lang || 'zh-CN';
@@ -847,6 +860,8 @@ function loadConfig() {
             updateSpeechRecognitionLang(data.speech_recognition_lang || 'zh-CN');
             updateSpeechSynthesisLang(data.speech_synthesis_lang || 'zh-CN');
             maxRecordingTime = data.max_recording_time || 30;
+            
+            onProviderChange();
         })
         .catch(error => console.error('加载配置失败:', error));
 }
@@ -861,26 +876,53 @@ function closeConfigModal() {
 
 function onProviderChange() {
     const provider = document.getElementById('llmProvider').value;
-    const ollamaGroup = document.getElementById('ollamaBaseUrl').closest('.form-group');
-    if (ollamaGroup) {
-        ollamaGroup.style.display = provider === 'ollama' ? 'block' : 'none';
-    }
+    
+    document.getElementById('ollamaGroup').style.display = provider === 'ollama' ? 'block' : 'none';
+    
+    const apiGroups = document.querySelectorAll('.api-config');
+    apiGroups.forEach(group => {
+        group.style.display = provider === 'ollama' ? 'none' : 'block';
+    });
+    
+    const openaiGroups = ['openaiGroup', 'openaiModelGroup', 'openaiKeyGroup'];
+    openaiGroups.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = provider === 'openai' ? 'block' : 'none';
+    });
+    
+    const anthropicGroups = ['anthropicGroup', 'anthropicModelGroup', 'anthropicKeyGroup'];
+    anthropicGroups.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = provider === 'anthropic' ? 'block' : 'none';
+    });
 }
 
 function saveConfig() {
     const llmProvider = document.getElementById('llmProvider').value;
     const ollamaBaseUrl = document.getElementById('ollamaBaseUrl').value;
+    const openaiBaseUrl = document.getElementById('openaiBaseUrl').value;
+    const openaiModel = document.getElementById('openaiModel').value;
+    const openaiApiKey = document.getElementById('openaiApiKey').value;
+    const anthropicBaseUrl = document.getElementById('anthropicBaseUrl').value;
+    const anthropicModel = document.getElementById('anthropicModel').value;
+    const anthropicApiKey = document.getElementById('anthropicApiKey').value;
     const maxTurns = parseInt(document.getElementById('maxContextTurns').value);
     const speechRecognitionLang = document.getElementById('speechRecognitionLang').value;
     const speechSynthesisLang = document.getElementById('speechSynthesisLang').value;
     const maxRecordingTimeInput = parseInt(document.getElementById('maxRecordingTime').value);
 
     fetch('/api/config', {
-        method: 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             llm_provider: llmProvider,
             ollama_base_url: ollamaBaseUrl,
+            openai_base_url: openaiBaseUrl,
+            openai_model: openaiModel,
+            openai_api_key: openaiApiKey,
+            anthropic_base_url: anthropicBaseUrl,
+            anthropic_model: anthropicModel,
+            anthropic_api_key: anthropicApiKey,
             max_context_turns: maxTurns,
             speech_recognition_lang: speechRecognitionLang,
             speech_synthesis_lang: speechSynthesisLang,

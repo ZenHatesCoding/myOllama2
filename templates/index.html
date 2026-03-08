@@ -102,11 +102,37 @@
                 <label>LLM Provider</label>
                 <select id="llmProvider" onchange="onProviderChange()">
                     <option value="ollama">本地 Ollama</option>
+                    <option value="openai">OpenAI 兼容 API</option>
+                    <option value="anthropic">Anthropic 兼容 API</option>
                 </select>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="ollamaGroup">
                 <label>Ollama 地址</label>
                 <input type="text" id="ollamaBaseUrl" value="http://localhost:11434">
+            </div>
+            <div class="form-group api-config" id="openaiGroup" style="display: none;">
+                <label>OpenAI API 地址</label>
+                <input type="text" id="openaiBaseUrl" placeholder="https://your-server.com/v1">
+            </div>
+            <div class="form-group api-config" id="openaiModelGroup" style="display: none;">
+                <label>OpenAI Model</label>
+                <input type="text" id="openaiModel" placeholder="your-model-name">
+            </div>
+            <div class="form-group api-config" id="openaiKeyGroup" style="display: none;">
+                <label>OpenAI API Key (可选)</label>
+                <input type="password" id="openaiApiKey" placeholder="sk-...">
+            </div>
+            <div class="form-group api-config" id="anthropicGroup" style="display: none;">
+                <label>Anthropic API 地址</label>
+                <input type="text" id="anthropicBaseUrl" placeholder="https://your-server.com">
+            </div>
+            <div class="form-group api-config" id="anthropicModelGroup" style="display: none;">
+                <label>Anthropic Model</label>
+                <input type="text" id="anthropicModel" placeholder="your-model-name">
+            </div>
+            <div class="form-group api-config" id="anthropicKeyGroup" style="display: none;">
+                <label>Anthropic API Key (可选)</label>
+                <input type="password" id="anthropicApiKey" placeholder="sk-ant-...">
             </div>
             <div class="form-group">
                 <label>上下文轮数</label>

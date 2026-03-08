@@ -10,6 +10,7 @@ from graph import GraphState, create_initial_state
 from tools import get_all_tools, news_toolkit
 from document_tools import document_tools, get_document_summary, search_document, get_document_outline
 from extensions import state
+from llm_factory import create_llm
 
 
 def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str, Any]]:
@@ -86,12 +87,35 @@ def node_detect_tool(state: GraphState) -> dict:
     level_config = DISCLOSURE_LEVELS.get(disclosure_level, DISCLOSURE_LEVELS["relevant"])
     
     model_name = state.get("model_name", "qwen3.5:9b")
+    provider = state.llm_provider if hasattr(state, 'llm_provider') else 'ollama'
     
-    llm = ChatOllama(
-        model=model_name,
-        base_url="http://localhost:11434",
-        temperature=0.3
-    )
+    if provider == "ollama":
+        llm = ChatOllama(
+            model=model_name,
+            base_url=state.ollama_base_url if hasattr(state, 'ollama_base_url') else "http://localhost:11434",
+            temperature=0.3
+        )
+    elif provider == "openai":
+        llm = create_llm(
+            provider="openai",
+            model=state.openai_model if hasattr(state, 'openai_model') else model_name,
+            base_url=state.openai_base_url if hasattr(state, 'openai_base_url') else None,
+            api_key=state.openai_api_key if hasattr(state, 'openai_api_key') else None,
+            temperature=0.3
+        )
+    elif provider == "anthropic":
+        llm = create_llm(
+            provider="anthropic",
+            model=state.anthropic_model if hasattr(state, 'anthropic_model') else model_name,
+            api_key=state.anthropic_api_key if hasattr(state, 'anthropic_api_key') else None,
+            temperature=0.3
+        )
+    else:
+        llm = ChatOllama(
+            model=model_name,
+            base_url="http://localhost:11434",
+            temperature=0.3
+        )
     
     tools_schema = build_tools_schema()
     intent = detect_tool_intent(llm, query, tools_schema)
@@ -197,15 +221,41 @@ def node_generate(state: GraphState) -> dict:
             document_context = formatted_text
             has_document = True
     
-    llm = ChatOllama(
-        model=model_name,
-        base_url="http://localhost:11434",
-        temperature=0.7,
-        num_ctx=32000,
-        num_predict=8000
-    )
-    
     from extensions import state as app_state
+    provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
+    
+    if provider == "ollama":
+        llm = ChatOllama(
+            model=model_name,
+            base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
+            temperature=0.7,
+            num_ctx=32000,
+            num_predict=8000
+        )
+    elif provider == "openai":
+        llm = create_llm(
+            provider="openai",
+            model=app_state.openai_model if hasattr(app_state, 'openai_model') else model_name,
+            base_url=app_state.openai_base_url if hasattr(app_state, 'openai_base_url') else None,
+            api_key=app_state.openai_api_key if hasattr(app_state, 'openai_api_key') else None,
+            temperature=0.7
+        )
+    elif provider == "anthropic":
+        llm = create_llm(
+            provider="anthropic",
+            model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else model_name,
+            api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
+            temperature=0.7
+        )
+    else:
+        llm = ChatOllama(
+            model=model_name,
+            base_url="http://localhost:11434",
+            temperature=0.7,
+            num_ctx=32000,
+            num_predict=8000
+        )
+    
     conversation = app_state.get_current_conversation()
     
     if has_document and document_context:

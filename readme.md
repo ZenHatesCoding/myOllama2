@@ -1,6 +1,6 @@
 # MyOllama - 智能对话助手
 
-基于 Flask、LangGraph 和 Ollama 的智能对话助手，支持文档渐进式披露问答、多模型选择、语音交互、截图识别等功能。
+基于 Flask、LangGraph 和 Ollama（或 OpenAI/Anthropic 兼容 API）的智能对话助手，支持文档渐进式披露问答、多模型选择、语音交互、截图识别等功能。
 
 ## 功能特性
 
@@ -9,7 +9,7 @@
 - **多文档格式支持**：PDF、Word (.docx)、纯文本
 - **图片上传**：支持图片上传和多模态问答
 - **截图识别**：支持屏幕截图和区域选择
-- **智能问答**：基于 LangGraph Agent 和 Ollama 的问答系统
+- **智能问答**：基于 LangGraph Agent 和 LLM（Ollama/OpenAI/Anthropic）的问答系统
 - **流式输出**：实时显示生成内容，提供流畅的用户体验
 - **中断操作**：可随时停止正在生成的回答
 - **新闻获取**：集成聚合数据 API，支持头条新闻、分类新闻、新闻搜索
@@ -29,13 +29,15 @@
 - **多模型支持**：qwen3:8b、qwen3:14b、deepseek-r1:8b、qwen3-vl:8b、qwen3.5 系列
 - **默认模型**：qwen3.5:9b
 - **自动切换**：上传图片或截图时自动切换到多模态模型
+- **多 Provider 支持**：支持 Ollama、OpenAI 兼容 API、Anthropic 兼容 API
 
 ## 环境要求
 
 - Python 3.8+
-- Ollama 服务（运行在 http://localhost:11434）
+- **Ollama 模式**：Ollama 服务（运行在 http://localhost:11434）
+- **API 模式**：OpenAI 或 Anthropic 兼容 API
 - 推荐使用的 Ollama 模型：
-  - 嵌入模型：`nomic-embed-text`
+  - 嵌入模型：`nomic-embed-text`（仅 Ollama 模式需要）
   - LLM 模型：`qwen3.5:9b`、`qwen3-vl:8b` 等
 
 ## 安装步骤
@@ -47,10 +49,12 @@
 # 安装依赖
 pip install -r requirements.txt
 
-# 拉取模型
+# 仅 Ollama 模式需要拉取模型
 ollama pull nomic-embed-text
 ollama pull qwen3.5:9b
 ollama pull qwen3-vl:8b
+
+# API 模式则需要在配置界面填写 API Key
 ```
 
 ## 启动应用
@@ -75,16 +79,16 @@ python app.py
 ┌─────────────────────────────────────────────────────────────────┐
 │                    LangGraph Agent (agent.py)                    │
 │                                                                  │
-│  ┌──────────────┐    ┌─────────────────┐    ┌────────────┐  │
-│  │ detect_tool  │───▶│ retrieve_document │───▶│  generate  │  │
-│  │  (工具检测)   │    │    (文档检索)     │    │  (生成回答)  │  │
-│  └──────────────┘    └─────────────────┘    └────────────┘  │
+│  ┌──────────────┐    ┌─────────────────┐    ┌────────────┐     │
+│  │ detect_tool  │───▶│ retrieve_document │───▶│  generate  │     │
+│  │  (工具检测)   │    │    (文档检索)     │    │  (生成回答)  │     │
+│  └──────────────┘    └─────────────────┘    └────────────┘     │
 │         │                                              │         │
 │         ▼                                              ▼         │
-│  ┌──────────────┐                           ┌────────────┐   │
-│  │ MCP Tools    │                           │  SSE Stream│   │
-│  │ (新闻/文档)  │                           │            │   │
-│  └──────────────┘                           └────────────┘   │
+│  ┌──────────────┐                           ┌────────────┐     │
+│  │ MCP Tools    │                           │  SSE Stream│     │
+│  │ (新闻/文档)  │                           │            │     │
+│  └──────────────┘                           └────────────┘     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -117,7 +121,7 @@ graph.add_edge("generate", END)
 | 节点 | 功能 | 决策依据 |
 |------|------|---------|
 | `detect_tool` | 意图识别 + 工具调用 | 检测问题是否需要 MCP 工具 |
-| `retrieve_document` | FAISS 语义检索 | 根据 disclosure_level 决定检索数量 |
+| `retrieve_document` | 向量检索 / 直接加载 | Ollama 用 FAISS，API 模式直接取文档块 |
 | `generate` | LLM 生成回答 | 整合工具结果 + 文档上下文 |
 
 ### 渐进式披露设计
@@ -152,7 +156,7 @@ graph.add_edge("generate", END)
 │  其他问题 ──▶  disclosure_level = "relevant"                 │
 │       │                              │                        │
 │       │                              ▼                        │
-│       │                     k = 8 (FAISS检索)                │
+│       │                     k = 8 (FAISS检索/直接取块)                │
 │       │                     返回8个最相关片段                 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -168,7 +172,7 @@ DISCLOSURE_LEVELS = {
 
 def decide_disclosure_level(query: str) -> str:
     query_lower = query.lower()
-    
+
     if any(kw in query_lower for kw in ["总结", "概括", "摘要", "summary"]):
         return "summary"
     elif any(kw in query_lower for kw in ["详细", "完整", "全部", "full"]):
@@ -193,10 +197,10 @@ def decide_disclosure_level(query: str) -> str:
 │                           │                                   │
 │         ┌─────────────────┼─────────────────┐               │
 │         ▼                 ▼                 ▼                │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐       │
-│  │  NewsMCP   │   │ DocumentTool│   │  Future...  │       │
-│  │ (新闻获取)  │   │  (文档工具)  │   │  (扩展用)   │       │
-│  └─────────────┘   └─────────────┘   └─────────────┘       │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐      │
+│  │  NewsMCP   │   │ DocumentTool│   │  Future...  │      │
+│  │ (新闻获取)  │   │  (文档工具)  │   │  (扩展用)   │      │
+│  └─────────────┘   └─────────────┘   └─────────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -219,14 +223,14 @@ def node_detect_tool(state: GraphState) -> dict:
     # 1. 分析问题意图
     tools_schema = build_tools_schema()
     intent = detect_tool_intent(llm, query, tools_schema)
-    
+
     # 2. 如果需要工具，执行工具
     if intent and intent.get("need_tool"):
         tool_name = intent.get("tool_name")
         # ... 执行 MCP 工具 ...
         result = {"success": True, "formatted_text": ...}
         return {"mcp_result": result}
-    
+
     return {"mcp_result": None}
 ```
 
@@ -244,7 +248,7 @@ class WeatherMCP(BaseMCP):
             name="weather_mcp",
             description="获取天气信息"
         )
-    
+
     def get_tools(self):
         return [
             ToolSchema(
@@ -253,7 +257,7 @@ class WeatherMCP(BaseMCP):
                 parameters=[...]
             )
         ]
-    
+
     def execute_tool(self, tool_name: str, parameters: dict):
         # 实现工具逻辑
         ...
@@ -283,7 +287,7 @@ mcp_manager.register_mcp(WeatherMCP())
 | 来源 | 策略 | 参数 |
 |------|------|------|
 | 对话摘要 | LLM 压缩 | 轮数 > 5 时生成 |
-| 历史 RAG | FAISS 检索 | k=3 |
+| 历史 RAG | FAISS 检索 / LLM 选择 | Ollama: k=3, API: LLM 判断 |
 | 文档 | 渐进式披露 | 根据问题类型 |
 
 ## 项目结构
@@ -305,22 +309,139 @@ myOllama/
 ├── conversation_manager.py # 对话持久化管理
 ├── history_rag.py         # 历史对话 RAG 检索
 ├── extensions.py          # 状态管理（解决循环依赖）
+├── llm_factory.py         # LLM 工厂（多 Provider 支持）
 ├── conversations/         # 对话存储目录
-├── vector_stores/         # 向量索引存储
+├── vector_stores/         # 向量索引存储（仅 Ollama 模式）
 └── templates/             # HTML 模板
 ```
 
 ## 技术栈
 
 - **后端**: Flask
-- **AI/ML**: LangChain, LangGraph, Ollama
-- **向量存储**: FAISS
+- **AI/ML**: LangChain, LangGraph, Ollama / OpenAI / Anthropic
+- **向量存储**: FAISS（仅 Ollama 模式需要）
 - **文档处理**: PyPDFLoader, python-docx
 - **前端**: 原生 HTML/CSS/JavaScript
 
 ## 更新日志
 
+### v7.1.0
+- **多 LLM Provider 支持**
+  - 支持 Ollama、OpenAI 兼容 API、Anthropic 兼容 API
+  - 可在配置界面切换不同的 LLM 服务商
+  - API 模式下不构建向量索引
+
+---
+
+## 待办事项
+
+### Bug
+
+- [ ] **流式输出卡住问题**：聊天时流式输出会卡住，需要手动刷新页面才能看到完整回答。可能与 SSE 连接未正确关闭或前端消息处理逻辑有关。
+
+---
+
+### 功能 - API 模式 LLM 决策
+
+#### 1. 历史对话 RAG - LLM 方案
+
+**问题**：API 模式下无法使用 embedding 构建向量索引
+
+**方案**：用 LLM 做历史对话检索
+
+```
+流程：
+1. 读取对话目录，获取所有对话的元信息（ID、名称、摘要）
+2. 将对话元信息 + 当前问题发给 LLM
+3. LLM 判断哪些历史对话与当前问题相关
+4. 读取 LLM 选中的对话内容
+5. 将相关对话内容添加到上下文
+```
+
+**实现位置**：history_rag.py
+
+**关键代码思路**：
+
+```python
+def retrieve_history_with_llm(query, current_conversation_id):
+    # 1. 获取所有对话元信息
+    conversations = conversation_manager.get_all_conversations()
+
+    # 2. 构建选择提示
+    conv_list = "\n".join([f"- {c['name']}: {c.get('summary', '')}" for c in conversations])
+
+    prompt = f"""当前问题：{query}
+
+历史对话列表：
+{conv_list}
+
+请选择与当前问题最相关的3个对话，返回对话ID列表。"""
+
+    # 3. LLM 选择
+    llm = get_llm_model()
+    selected_ids = llm.invoke(prompt)
+
+    # 4. 读取选中对话内容
+    relevant_history = []
+    for conv_id in selected_ids:
+        conv_data = conversation_manager.load_conversation(conv_id)
+        relevant_history.append(conv_data)
+
+    return relevant_history
+```
+
+---
+
+#### 2. 文档问答 - LLM 方案
+
+**问题**：API 模式下没有向量索引，无法做语义检索
+
+**方案**：直接把文档内容给 LLM，让 LLM 自己理解
+
+```
+流程：
+1. 用户上传文档 → 只做文本分块，不构建向量索引
+2. 用户提问时，根据 disclosure_level 决定取多少块
+3. 将文档块内容直接发给 LLM
+4. LLM 根据文档内容回答问题
+```
+
+**实现位置**：agent.py - node_retrieve_document
+
+**关键代码思路**：
+
+```python
+def node_retrieve_document(state: GraphState) -> dict:
+    # ...获取 conversation 和 chunks...
+
+    if conversation.vector_store and provider == "ollama":
+        # Ollama 模式：使用向量检索（原有逻辑）
+        k = level_config.get("k", 8)
+        relevant_docs = conversation.vector_store.similarity_search(query, k=k)
+        context = "\n\n".join([doc.page_content for doc in relevant_docs])
+    else:
+        # API 模式：直接取文档块，让 LLM 决定哪些相关
+        if disclosure_level == "summary":
+            n_chunks = 30
+        elif disclosure_level == "full":
+            n_chunks = len(chunks)
+        else:
+            n_chunks = 10
+        selected_chunks = chunks[:n_chunks]
+        context = "\n\n".join([chunk.page_content for chunk in selected_chunks])
+
+    return {"has_document": True, "document_context": context}
+```
+
+**注意**：
+- disclosure_level = "relevant" 时，取前 10 个块发给 LLM（而非向量检索的 8 个）
+- LLM 自身有强大的理解能力，可以忽略不相关内容
+- 文档内容直接作为上下文，理论上比向量检索更准确（因为保留了完整上下文）
+
+---
+
 ### v7.0.0
+
 - **LangGraph 重构**
   - 使用 StateGraph 实现状态化工作流
   - 条件边实现动态流程控制
@@ -341,10 +462,12 @@ myOllama/
   - LLM 输出长度扩展
 
 ### v6.1.0
+
 - 文档上传异步处理 + 进度条
 - 摘要流式生成
 - 中断操作支持
 
 ### v6.0.0
+
 - 文档渐进式问答
 - 上下文窗口自适应

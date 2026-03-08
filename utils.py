@@ -27,12 +27,32 @@ def get_embedding_model(base_url: str):
 
 
 def get_llm_model(temperature=0.7):
-    return create_llm(
-        provider=state.llm_provider,
-        model="qwen3.5:4b",
-        base_url=state.ollama_base_url if state.llm_provider == "ollama" else None,
-        temperature=temperature
-    )
+    provider = state.llm_provider
+    
+    if provider == "ollama":
+        return create_llm(
+            provider="ollama",
+            model="qwen3.5:4b",
+            base_url=state.ollama_base_url,
+            temperature=temperature
+        )
+    elif provider == "openai":
+        return create_llm(
+            provider="openai",
+            model=state.openai_model,
+            base_url=state.openai_base_url,
+            api_key=state.openai_api_key or None,
+            temperature=temperature
+        )
+    elif provider == "anthropic":
+        return create_llm(
+            provider="anthropic",
+            model=state.anthropic_model,
+            api_key=state.anthropic_api_key or None,
+            temperature=temperature
+        )
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
 
 
 def load_document(file_path, file_type):
@@ -56,10 +76,14 @@ def process_document(documents, base_url: str):
         chunk_overlap=200,
         length_function=len
     )
-    texts = text_splitter.split_documents(documents)
-    embedding = get_embedding_model(base_url)
-    vector_store = FAISS.from_documents(texts, embedding)
-    return vector_store
+    chunks = text_splitter.split_documents(documents)
+    
+    if state.llm_provider == "ollama":
+        embedding = get_embedding_model(base_url)
+        vector_store = FAISS.from_documents(chunks, embedding)
+        return vector_store
+    else:
+        return chunks
 
 
 def generate_summary(messages):
