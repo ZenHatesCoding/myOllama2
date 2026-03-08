@@ -54,10 +54,25 @@ def process_document(documents):
 
 def generate_summary(messages):
     try:
-        prompt = "请用一句话总结以下对话的主要内容：\n\n"
+        prompt = """请仔细阅读以下对话记录，然后生成一个简洁的摘要。
+
+【对话记录】
+"""
         for msg in messages:
             prompt += f"{msg.role}: {msg.content}\n"
-        prompt += "\n摘要："
+
+        prompt += """
+【要求】
+1. 一句话概括对话核心主题
+2. 如果有文档问答，记录文档主题
+3. 记录用户的主要意图
+
+【摘要格式】
+主题：[核心主题]
+文档：[文档名称或无]
+意图：[用户主要目的]
+
+请生成摘要："""
         
         response = llm_model.invoke(prompt)
         return response.content.strip()

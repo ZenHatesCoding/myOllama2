@@ -342,6 +342,7 @@ function loadMessages(conversationId) {
         .then(response => response.json())
         .then(data => {
             renderMessages(data.messages);
+            updateDocumentInfo(data.document_file);
         })
         .catch(error => console.error('加载消息失败:', error));
 }

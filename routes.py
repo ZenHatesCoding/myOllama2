@@ -146,7 +146,7 @@ def register_routes(app):
                     query = "请总结这个文档的主要内容"
                     
                     summary_text = ""
-                    for chunk in stream_graph(query, model_name="qwen3.5:4b"):
+                    for chunk in stream_graph(query, model_name="qwen3.5:9b"):
                         if state.should_stop:
                             break
                         summary_text += chunk
@@ -338,7 +338,7 @@ def register_routes(app):
         
         data = request.json
         query = data.get('query', '').strip()
-        model_name = data.get('model', 'qwen3.5:4b')
+        model_name = data.get('model', 'qwen3.5:9b')
         images = data.get('images', [])
         
         if not query and not images:

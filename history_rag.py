@@ -21,22 +21,31 @@ class HistoryRAG:
             "history_index"
         )
     
+    MAX_BLOCK_LENGTH = 2000
+    
     def _split_into_blocks(self, messages: List[Dict]) -> List[Dict]:
         blocks = []
         i = 0
         while i < len(messages):
             if messages[i]["role"] == "user":
-                block = {
-                    "user_content": messages[i]["content"],
-                    "assistant_content": "",
-                    "user_idx": i
-                }
+                user_content = messages[i]["content"]
+                if len(user_content) > self.MAX_BLOCK_LENGTH:
+                    user_content = user_content[:self.MAX_BLOCK_LENGTH]
+                
+                assistant_content = ""
                 if i + 1 < len(messages) and messages[i + 1]["role"] == "assistant":
-                    block["assistant_content"] = messages[i + 1]["content"]
+                    assistant_content = messages[i + 1]["content"]
+                    if len(assistant_content) > self.MAX_BLOCK_LENGTH:
+                        assistant_content = assistant_content[:self.MAX_BLOCK_LENGTH]
                     i += 2
                 else:
                     i += 1
-                blocks.append(block)
+                
+                blocks.append({
+                    "user_content": user_content,
+                    "assistant_content": assistant_content,
+                    "user_idx": i
+                })
             else:
                 i += 1
         return blocks
@@ -121,7 +130,16 @@ class HistoryRAG:
         
         if all_documents:
             try:
-                self.vector_store = FAISS.from_documents(all_documents, embedding_model)
+                if len(all_documents) > 100:
+                    batches = [all_documents[i:i+100] for i in range(0, len(all_documents), 100)]
+                    for batch in batches:
+                        batch_store = FAISS.from_documents(batch, embedding_model)
+                        if self.vector_store is None:
+                            self.vector_store = batch_store
+                        else:
+                            self.vector_store.merge_from(batch_store)
+                else:
+                    self.vector_store = FAISS.from_documents(all_documents, embedding_model)
                 print(f"历史对话索引构建完成，共 {len(all_documents)} 个块")
             except Exception as e:
                 print(f"构建全部索引失败: {str(e)}")

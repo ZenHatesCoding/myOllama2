@@ -74,6 +74,144 @@ loadMessages(currentConversationId);
 
 ---
 
+## Token 限制问题汇总
+
+### 问题 1：历史对话索引构建失败
+
+**问题描述**
+构建历史对话索引时报错：`the input length exceeds the context length (status code: 400)`
+
+**问题分析**
+- embedding 模型 `nomic-embed-text` 对输入长度有限制
+- 历史对话消息过长导致超出限制
+
+**修复方案**
+- `history_rag.py` 中添加分块长度限制
+- `_split_into_blocks` 方法中截断每条消息到 2000 字符
+- 分批构建索引（每批 100 个块）并合并
+
+---
+
+### 问题 2：文档摘要被截断
+
+**问题描述**
+上传文档生成摘要时，输出被截断
+
+**问题分析**
+- LLM 默认的 `num_predict` 参数限制输出长度
+- 长文档摘要需要更长的输出
+
+**修复方案**
+- `agent.py` 的 `node_generate` 中增加 `num_predict=8000`
+- 统一使用当前选中的模型（不再硬编码 qwen3.5:4b）
+- 默认模型改为 qwen3.5:9b
+
+---
+
+### 修改的文件
+
+- `history_rag.py`: 添加 MAX_BLOCK_LENGTH=2000，分批构建索引
+- `agent.py`: num_predict=8000，统一使用选中模型
+- `routes.py`: 默认模型改为 qwen3.5:9b
+- `templates/index.html`: 默认选项改为 qwen3.5:9b
+
+### 修复时间
+2026-03-08
+
+---
+
+## 问题 2 补充：System Prompt 优化
+
+### 问题描述
+LLM 生成回答时，会把 system prompt 中的指令描述也当作需要处理的内容，导致输出包含不必要的解释性内容。
+
+### 修复方案
+
+1. **agent.py - 文档问答**：优化 system prompt，明确要求 LLM 直接输出答案
+
+2. **agent.py - 普通问答**：增加具体指导
+
+3. **utils.py - 对话摘要**：优化摘要生成 prompt
+
+### 修改内容
+
+- `agent.py`: 更新文档问答和普通问答的 system prompt
+- `utils.py`: 更新对话摘要生成的 prompt
+
+### 修复时间
+2026-03-08
+
+---
+
+## 问题 2：文档摘要质量差 + 渐进式加载
+
+### 问题描述
+1. 上传文档后自动摘要质量很差，显示的是原始文档块而非 LLM 生成的摘要
+2. 中断后手动提问"总结文档"，同样返回原始文档块
+3. 返回块数太少（默认10块约5000字），无法覆盖长文档
+
+### 问题分析
+
+#### 问题 1 根因
+- `stream_graph()` 中对文档工具有特殊处理，直接输出原始文档内容
+- 工具结果没有让 LLM 再处理生成摘要
+
+#### 问题 2 根因
+- 工具默认只返回 10 个块
+- 没有根据问题类型调整返回内容粒度
+
+### 修复方案
+
+#### 方案 A：修复 Tool Calling 流程
+1. 移除 `stream_graph()` 中对文档工具的特殊处理
+2. 让 `node_generate()` 正确将文档内容作为上下文，让 LLM 生成回答
+
+#### 方案 C：实现渐进式加载
+1. 在 `graph.py` 中定义披露层级配置
+```python
+DISCLOSURE_LEVELS = {
+    "summary": {"n_chunks": 30, "description": "摘要"},
+    "relevant": {"k": 8, "description": "相关片段"},
+    "full": {"n_chunks": 100, "description": "完整内容"}
+}
+```
+
+2. 添加披露层级判断函数
+```python
+def decide_disclosure_level(query: str) -> str:
+    # 根据问题关键词判断需要什么粒度的内容
+    if "总结" in query or "概括" in query:
+        return "summary"
+    elif "详细" in query or "完整" in query:
+        return "full"
+    else:
+        return "relevant"
+```
+
+3. 修改 `node_detect_tool` 根据披露层级调用工具
+4. 修改 `node_retrieve_document` 根据披露层级调整检索数量
+
+### 修改的文件
+
+- `graph.py`: 添加 `disclosure_level` 字段和 `DISCLOSURE_LEVELS`、`decide_disclosure_level`
+- `agent.py`: 
+  - 移除 `stream_graph` 中文档工具的特殊处理
+  - `node_detect_tool` 根据披露层级设置工具参数
+  - `node_retrieve_document` 根据披露层级调整 k 值
+
+### 修复后效果
+
+| 问题类型 | 触发关键词 | 返回内容 |
+|---------|-----------|---------|
+| 总结/概括 | "总结"、"abstract" | 30 个块摘要，让 LLM 生成总结 |
+| 一般问答 | 默认 | 8 个相关片段 |
+| 详细/完整 | "详细"、"完整" | 100 个块 |
+
+### 修复时间
+2026-03-08
+
+---
+
 ## 问题 3：循环依赖风险
 
 ### 问题描述

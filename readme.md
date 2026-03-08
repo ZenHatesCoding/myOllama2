@@ -5,19 +5,21 @@
 ## 功能特性
 
 ### 核心功能
-- **文档渐进式披露问答**：上传文档后，系统自动生成摘要，支持分层加载文档内容
+- **文档渐进式披露问答**：上传文档后，系统根据问题类型智能决定披露层级（摘要/相关片段/完整内容）
 - **多文档格式支持**：PDF、Word (.docx)、纯文本
 - **图片上传**：支持图片上传和多模态问答
 - **截图识别**：支持屏幕截图和区域选择
-- **智能问答**：基于 LangChain、LangGraph 和 Ollama 的问答系统
+- **智能问答**：基于 LangGraph Agent 和 Ollama 的问答系统
 - **流式输出**：实时显示生成内容，提供流畅的用户体验
 - **中断操作**：可随时停止正在生成的回答
+- **新闻获取**：集成聚合数据 API，支持头条新闻、分类新闻、新闻搜索
 
 ### 对话管理
 - **本地记忆持久化**：对话历史自动保存为 Markdown 文件，重启服务后自动恢复
 - **多对话支持**：创建和管理多个独立对话
 - **对话分叉**：基于现有对话创建新的分支对话
 - **智能命名**：AI 自动生成对话摘要作为标题
+- **历史对话 RAG**：语义检索历史对话中的相关内容
 
 ### 语音功能
 - **语音识别**：支持中英文语音输入，自动转换为文字
@@ -25,7 +27,7 @@
 
 ### 模型选择
 - **多模型支持**：qwen3:8b、qwen3:14b、deepseek-r1:8b、qwen3-vl:8b、qwen3.5 系列
-- **默认模型**：qwen3.5:9b（对话）、qwen3.5:4b（摘要）
+- **默认模型**：qwen3.5:9b
 - **自动切换**：上传图片或截图时自动切换到多模态模型
 
 ## 环境要求
@@ -34,59 +36,278 @@
 - Ollama 服务（运行在 http://localhost:11434）
 - 推荐使用的 Ollama 模型：
   - 嵌入模型：`nomic-embed-text`
-  - LLM 模型：`qwen3.5:9b`、`qwen3.5:4b`、`qwen3-vl:8b` 等
+  - LLM 模型：`qwen3.5:9b`、`qwen3-vl:8b` 等
 
 ## 安装步骤
 
 ```bash
-# 安装依赖
+# 激活虚拟环境
 .venv\Scripts\activate
-pip install -r myOllama\requirements.txt
+
+# 安装依赖
+pip install -r requirements.txt
 
 # 拉取模型
 ollama pull nomic-embed-text
 ollama pull qwen3.5:9b
-ollama pull qwen3.5:4b
 ollama pull qwen3-vl:8b
 ```
 
-## 使用方法
-
-### 启动应用
+## 启动应用
 
 ```bash
-python myOllama\app.py
+python app.py
 ```
 
 应用将在 http://localhost:5000 启动
 
-### 文档问答
+## 架构设计
 
-1. 点击"📤 上传文档"按钮上传文档（支持 PDF、Word、TXT）
-2. 系统自动生成文档摘要
-3. 提问时，系统采用渐进式披露策略：
-   - **第一层**：文档摘要（始终加载）
-   - **第二层**：RAG 检索相关片段（按需加载）
-   - **第三层**：扩展上下文（模型判断需要时加载）
+### 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Flask Web Server                         │
+│                         (app.py / routes.py)                     │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    LangGraph Agent (agent.py)                    │
+│                                                                  │
+│  ┌──────────────┐    ┌─────────────────┐    ┌────────────┐  │
+│  │ detect_tool  │───▶│ retrieve_document │───▶│  generate  │  │
+│  │  (工具检测)   │    │    (文档检索)     │    │  (生成回答)  │  │
+│  └──────────────┘    └─────────────────┘    └────────────┘  │
+│         │                                              │         │
+│         ▼                                              ▼         │
+│  ┌──────────────┐                           ┌────────────┐   │
+│  │ MCP Tools    │                           │  SSE Stream│   │
+│  │ (新闻/文档)  │                           │            │   │
+│  └──────────────┘                           └────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### LangGraph 工作流
+
+项目采用 **LangGraph** 实现状态化的工作流，每个请求都会经过以下节点：
+
+```python
+# 简化的工作流定义 (agent.py)
+graph = StateGraph(GraphState)
+
+graph.add_node("detect_tool", node_detect_tool)      # 检测是否需要工具
+graph.add_node("retrieve_document", node_retrieve_document)  # 文档检索
+graph.add_node("generate", node_generate)            # LLM 生成回答
+
+graph.set_entry_point("detect_tool")
+
+# 条件边：根据是否有工具结果决定下一步
+graph.add_conditional_edges("detect_tool", should_use_tool, {
+    "generate": "generate",           # 有工具结果 → 直接生成
+    "retrieve_document": "retrieve_document"  # 无工具结果 → 检索文档
+})
+
+graph.add_edge("retrieve_document", "generate")  # 检索后生成
+graph.add_edge("generate", END)
+```
+
+**节点说明**：
+
+| 节点 | 功能 | 决策依据 |
+|------|------|---------|
+| `detect_tool` | 意图识别 + 工具调用 | 检测问题是否需要 MCP 工具 |
+| `retrieve_document` | FAISS 语义检索 | 根据 disclosure_level 决定检索数量 |
+| `generate` | LLM 生成回答 | 整合工具结果 + 文档上下文 |
+
+### 渐进式披露设计
+
+项目的核心创新：根据问题类型动态决定文档内容的披露层级。
+
+```
+用户提问 "总结文档"
+       │
+       ▼
+┌──────────────────────┐
+│  decide_disclosure  │  ← 分析问题关键词
+│    Level(query)     │
+└──────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    披露层级决策                               │
+├──────────────────────────────────────────────────────────────┤
+│  "总结/概括/摘要"  ──▶  disclosure_level = "summary"        │
+│       │                              │                        │
+│       │                              ▼                        │
+│       │                     n_chunks = 30                    │
+│       │                     返回30个块给LLM生成摘要          │
+│       │                                                      │
+│  "详细/完整/全部" ──▶  disclosure_level = "full"            │
+│       │                              │                        │
+│       │                              ▼                        │
+│       │                     n_chunks = 100                   │
+│       │                     返回100个块（完整内容）           │
+│       │                                                      │
+│  其他问题 ──▶  disclosure_level = "relevant"                 │
+│       │                              │                        │
+│       │                              ▼                        │
+│       │                     k = 8 (FAISS检索)                │
+│       │                     返回8个最相关片段                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**实现代码** (graph.py)：
+
+```python
+DISCLOSURE_LEVELS = {
+    "summary": {"n_chunks": 30, "description": "摘要"},
+    "relevant": {"k": 8, "description": "相关片段"},
+    "full": {"n_chunks": 100, "description": "完整内容"}
+}
+
+def decide_disclosure_level(query: str) -> str:
+    query_lower = query.lower()
+    
+    if any(kw in query_lower for kw in ["总结", "概括", "摘要", "summary"]):
+        return "summary"
+    elif any(kw in query_lower for kw in ["详细", "完整", "全部", "full"]):
+        return "full"
+    else:
+        return "relevant"
+```
+
+### MCP 工具系统
+
+项目使用 **MCP (Model Context Protocol)** 架构管理外部工具，与 LangGraph 的 Tool Calling 集成。
+
+#### MCP 架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      MCP Manager (manager.py)                │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  意图识别：使用 LLM 判断用户是否需要工具             │    │
+│  │  → 分析问题 → 选择工具 → 提取参数                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                           │                                   │
+│         ┌─────────────────┼─────────────────┐               │
+│         ▼                 ▼                 ▼                │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐       │
+│  │  NewsMCP   │   │ DocumentTool│   │  Future...  │       │
+│  │ (新闻获取)  │   │  (文档工具)  │   │  (扩展用)   │       │
+│  └─────────────┘   └─────────────┘   └─────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 已集成的工具
+
+| 工具 | 来源 | 功能 |
+|------|------|------|
+| `get_headlines` | NewsMCP | 获取头条新闻 |
+| `get_news_by_type` | NewsMCP | 按分类获取新闻 |
+| `search_news` | NewsMCP | 关键词搜索新闻 |
+| `get_document_summary` | DocumentTool | 获取文档摘要 |
+| `search_document` | DocumentTool | 语义检索文档 |
+| `get_document_outline` | DocumentTool | 获取文档大纲 |
+
+#### LangGraph 与 MCP 的集成
+
+```python
+# agent.py - node_detect_tool 节点
+def node_detect_tool(state: GraphState) -> dict:
+    # 1. 分析问题意图
+    tools_schema = build_tools_schema()
+    intent = detect_tool_intent(llm, query, tools_schema)
+    
+    # 2. 如果需要工具，执行工具
+    if intent and intent.get("need_tool"):
+        tool_name = intent.get("tool_name")
+        # ... 执行 MCP 工具 ...
+        result = {"success": True, "formatted_text": ...}
+        return {"mcp_result": result}
+    
+    return {"mcp_result": None}
+```
+
+#### 添加新 MCP 工具
+
+1. 继承 `BaseMCP` 类
+2. 实现 `get_tools()` 和 `execute_tool()` 方法
+3. 在 `MCPManager` 中注册
+
+```python
+# 示例：添加天气 MCP
+class WeatherMCP(BaseMCP):
+    def __init__(self):
+        super().__init__(
+            name="weather_mcp",
+            description="获取天气信息"
+        )
+    
+    def get_tools(self):
+        return [
+            ToolSchema(
+                name="get_weather",
+                description="获取指定城市天气",
+                parameters=[...]
+            )
+        ]
+    
+    def execute_tool(self, tool_name: str, parameters: dict):
+        # 实现工具逻辑
+        ...
+
+# 注册
+mcp_manager.register_mcp(WeatherMCP())
+```
+
+### 上下文加载策略
+
+```
+用户提问
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    上下文构建流程                             │
+├─────────────────────────────────────────────────────────────┤
+│  1. System Prompt (指定角色和回答规则)                      │
+│  2. 对话摘要 (对话轮数 > 5 时生成)                          │
+│  3. 历史对话 RAG (语义检索相关片段)                         │
+│  4. 文档上下文 (根据 disclosure_level 加载)                 │
+│  5. 最近对话 (滑动窗口，默认 5 轮)                           │
+│  6. 当前问题                                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 来源 | 策略 | 参数 |
+|------|------|------|
+| 对话摘要 | LLM 压缩 | 轮数 > 5 时生成 |
+| 历史 RAG | FAISS 检索 | k=3 |
+| 文档 | 渐进式披露 | 根据问题类型 |
 
 ## 项目结构
 
 ```
 myOllama/
-├── app.py                 # Flask 应用主文件
-├── models.py              # 数据模型（集成持久化）
-├── routes.py              # API 路由
-├── utils.py               # 工具函数
-├── graph.py               # LangGraph State 定义
-├── tools.py               # 新闻 Tool 定义
-├── document_tools.py      # 文档 Tool 定义
-├── agent.py               # LangGraph Agent 构建
-├── conversation_manager.py # 对话持久化管理器
+├── app.py                 # Flask 应用入口
+├── routes.py              # API 路由定义
+├── agent.py               # LangGraph Agent 构建和节点定义
+├── graph.py               # GraphState 定义和渐进式披露逻辑
+├── document_tools.py      # 文档工具 (LangChain @tool)
+├── mcp/
+│   ├── __init__.py
+│   ├── base.py           # MCP 基类定义
+│   ├── manager.py        # MCP 管理器
+│   └── news_mcp.py       # 新闻 MCP 实现
+├── utils.py               # 工具函数（消息构建、摘要生成）
+├── resources.py           # 资源注册表
+├── conversation_manager.py # 对话持久化管理
 ├── history_rag.py         # 历史对话 RAG 检索
-├── context_config.py      # 上下文窗口自适应配置
+├── extensions.py          # 状态管理（解决循环依赖）
 ├── conversations/         # 对话存储目录
-├── assets/                # 多模态资源
-└── vector_stores/         # 向量索引
+├── vector_stores/         # 向量索引存储
+└── templates/             # HTML 模板
 ```
 
 ## 技术栈
@@ -97,142 +318,33 @@ myOllama/
 - **文档处理**: PyPDFLoader, python-docx
 - **前端**: 原生 HTML/CSS/JavaScript
 
-## 架构说明
-
-### LangGraph 架构
-
-```
-用户请求
-    ↓
-┌─────────────────────────────────────────┐
-│           LangGraph StateGraph           │
-│  ┌──────────────┐  ┌──────────────┐      │
-│  │ detect_tool  │→ │ retrieve_doc │      │
-│  │  (工具检测)   │  │  (文档检索)   │      │
-│  └──────────────┘  └──────────────┘      │
-│          ↓                ↓               │
-│  ┌──────────────────────────────┐        │
-│  │         generate             │        │
-│  │        (生成回答)             │        │
-│  └──────────────────────────────┘        │
-└─────────────────────────────────────────┘
-```
-
-### Tool 系统
-
-| Tool | 功能 |
-|------|------|
-| `get_headlines` | 获取头条新闻 |
-| `get_news_by_type` | 按类型获取新闻 |
-| `search_news` | 搜索新闻 |
-| `get_document_summary` | 获取文档摘要 |
-| `search_document` | 搜索文档内容 |
-| `expand_context` | 扩展上下文 |
-| `get_document_outline` | 获取文档大纲 |
-
-### 上下文加载策略
-
-项目采用三层上下文加载策略，实现渐进式披露：
-
-```
-用户提问
-    ↓
-┌─────────────────────────────────────────────────────┐
-│                  上下文构建流程                      │
-├─────────────────────────────────────────────────────┤
-│  1. 系统提示词                                      │
-│  2. 早期对话摘要（对话轮数 > 5 时生成）              │
-│  3. 历史对话 RAG（语义检索相关片段，k=3）           │
-│  4. 最近 N 轮对话（滑动窗口，默认 5 轮）             │
-│  5. 当前问题                                         │
-└─────────────────────────────────────────────────────┘
-```
-
-| 来源 | 策略 | 参数 | 说明 |
-|------|------|------|------|
-| 早期对话 | 摘要压缩 | qwen3.5:4b | 对话轮数 > 5 时生成摘要 |
-| 历史对话 RAG | FAISS 语义检索 | k=3 | 根据当前问题检索相关片段 |
-| 最近对话 | 滑动窗口 | 默认 5 轮 | 最近 N 轮完整保留 |
-
-### 文档渐进式披露
-
-```
-用户上传文档
-    ↓
-┌─────────────────────────────────────────────┐
-│  文档处理层                                  │
-│  ├─ 分块（带索引）                          │
-│  ├─ 向量化 → FAISS                          │
-│  └─ 生成摘要 → document_summary             │
-└─────────────────────────────────────────────┘
-    ↓
-用户提问
-    ↓
-┌─────────────────────────────────────────────┐
-│  第1层：文档摘要（始终加载）                  │
-│  第2层：RAG 检索（按需加载，k 自适应）        │
-│  第3层：扩展上下文（模型判断需要时加载）       │
-└─────────────────────────────────────────────┘
-```
-
-### 上下文窗口自适应
-
-| 窗口大小 | 模型示例 | search_k | chunk_size |
-|----------|----------|----------|------------|
-| small (8k) | qwen3:8b, llama3:8b | 2 | 500 |
-| medium (32k) | qwen3.5:4b/9b | 4 | 800 |
-| large (128k+) | deepseek-r1:14b | 6 | 1200 |
-
-## 注意事项
-
-- 确保 Ollama 服务正在运行（http://localhost:11434）
-- 推荐使用 Edge 浏览器以获得最佳语音功能体验
-- 必须使用 `http://localhost:5000` 访问，不能使用 IP 地址（语音权限限制）
-
 ## 更新日志
 
+### v7.0.0
+- **LangGraph 重构**
+  - 使用 StateGraph 实现状态化工作流
+  - 条件边实现动态流程控制
+  - MemorySaver 实现对话状态记忆
+- **渐进式披露升级**
+  - 根据问题类型自动选择披露层级
+  - summary / relevant / full 三级披露
+  - 关键词驱动的智能决策
+- **MCP 工具集成**
+  - MCP Manager 统一管理外部工具
+  - LLM 意图识别 + 自动工具调用
+  - 支持新闻获取、文档问答等
+- **默认模型升级**
+  - 对话默认模型改为 qwen3.5:9b
+  - 统一使用当前选中模型
+- **Token 限制优化**
+  - 历史对话分块截断
+  - LLM 输出长度扩展
+
 ### v6.1.0
-- 文档上传优化
-  - 异步处理文档，显示实时进度条（解析→分块→建索引→生成摘要）
-  - 支持停止按钮中断文档处理过程
-  - 摘要流式生成并显示在对话框中
-- UI状态优化
-  - 问答结束后正确禁用停止按钮
+- 文档上传异步处理 + 进度条
+- 摘要流式生成
+- 中断操作支持
 
 ### v6.0.0
-- 文档渐进式披露问答
-  - 上传文档时自动生成摘要
-  - 三层加载策略：摘要 → RAG 检索 → 扩展上下文
-  - 模型判断是否需要更多信息
-- 文档 Tool 系统
-  - `get_document_summary`: 获取文档摘要
-  - `search_document`: 搜索文档内容
-  - `expand_context`: 扩展上下文
-  - `get_document_outline`: 获取文档大纲
+- 文档渐进式问答
 - 上下文窗口自适应
-  - 根据模型自动调整检索参数
-  - 小窗口模型减少检索量，大窗口模型增加检索量
-- 新增文件
-  - `document_tools.py`: 文档 Tool 定义
-  - `context_config.py`: 上下文窗口自适应配置
-
-### v5.1.0
-- 本地记忆持久化
-- 历史对话 RAG 检索
-- 模型配置优化
-
-### v5.0.0
-- 重构为 LangGraph 架构
-- 迁移 MCP 到 LangGraph Tool
-
-### v4.0.0
-- 添加截图识别功能
-
-### v3.0.0
-- 添加语音识别和语音朗读功能
-
-### v2.0.0
-- 添加文档问答功能
-
-### v1.0.0
-- 初始版本，基本对话功能

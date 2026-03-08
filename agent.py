@@ -73,6 +73,8 @@ def build_tools_schema() -> str:
 
 
 def node_detect_tool(state: GraphState) -> dict:
+    from graph import decide_disclosure_level, DISCLOSURE_LEVELS
+    
     if state.get("should_stop"):
         return {}
     
@@ -80,8 +82,13 @@ def node_detect_tool(state: GraphState) -> dict:
     if not query:
         return {"mcp_result": None}
     
+    disclosure_level = decide_disclosure_level(query)
+    level_config = DISCLOSURE_LEVELS.get(disclosure_level, DISCLOSURE_LEVELS["relevant"])
+    
+    model_name = state.get("model_name", "qwen3.5:9b")
+    
     llm = ChatOllama(
-        model="qwen3.5:4b",
+        model=model_name,
         base_url="http://localhost:11434",
         temperature=0.3
     )
@@ -107,24 +114,32 @@ def node_detect_tool(state: GraphState) -> dict:
                 parameters.get("page_size", 10)
             )
         elif tool_name == "get_document_summary":
-            result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_summary.invoke({})}
+            n_chunks = level_config.get("n_chunks", 30)
+            result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_summary.invoke({"n_chunks": n_chunks})}
         elif tool_name == "search_document":
+            k = level_config.get("k", 8)
             result = {"success": True, "tool_name": tool_name, "formatted_text": search_document.invoke({
                 "query": parameters.get("query", query),
-                "k": parameters.get("k", 4)
+                "k": k
             })}
         elif tool_name == "get_document_outline":
             result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_outline.invoke({})}
         
         if result and result.get("success"):
-            return {"mcp_result": result}
+            result["disclosure_level"] = disclosure_level
+            return {"mcp_result": result, "disclosure_level": disclosure_level}
     
-    return {"mcp_result": None}
+    return {"mcp_result": None, "disclosure_level": disclosure_level}
 
 
 def node_retrieve_document(state: GraphState) -> dict:
+    from graph import DISCLOSURE_LEVELS
+    
     if state.get("should_stop"):
         return {}
+    
+    disclosure_level = state.get("disclosure_level", "relevant")
+    level_config = DISCLOSURE_LEVELS.get(disclosure_level, DISCLOSURE_LEVELS["relevant"])
     
     conversation = state.get_current_conversation() if hasattr(state, 'get_current_conversation') else None
     
@@ -134,16 +149,19 @@ def node_retrieve_document(state: GraphState) -> dict:
     
     if conversation and conversation.vector_store:
         query = state.get("query", "")
-        relevant_docs = conversation.vector_store.similarity_search(query, k=4)
+        k = level_config.get("k", 8)
+        relevant_docs = conversation.vector_store.similarity_search(query, k=k)
         context = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else "无相关内容"
         return {
             "has_document": True,
-            "document_context": context
+            "document_context": context,
+            "disclosure_level": disclosure_level
         }
     
     return {
         "has_document": False,
-        "document_context": ""
+        "document_context": "",
+        "disclosure_level": disclosure_level
     }
 
 
@@ -152,7 +170,7 @@ def node_generate(state: GraphState) -> dict:
         return {"output_content": "操作已中断"}
     
     mcp_result = state.get("mcp_result")
-    model_name = state.get("model_name", "qwen3.5:4b")
+    model_name = state.get("model_name", "qwen3.5:9b")
     query = state.get("query", "")
     images = state.get("images", [])
     has_document = state.get("has_document", False)
@@ -182,16 +200,36 @@ def node_generate(state: GraphState) -> dict:
     llm = ChatOllama(
         model=model_name,
         base_url="http://localhost:11434",
-        temperature=0.7
+        temperature=0.7,
+        num_ctx=32000,
+        num_predict=8000
     )
     
     from extensions import state as app_state
     conversation = app_state.get_current_conversation()
     
     if has_document and document_context:
-        system_prompt = f"你是一个文档问答助手。仅基于以下内容回答问题：\n\n{document_context}"
+        system_prompt = f"""你是一个专业的文档助手。
+你的任务是根据下面提供的文档内容，回答用户的问题。
+
+【用户问题】
+{query}
+
+【文档内容】
+{document_context}
+
+【回答要求】
+1. 直接基于文档内容回答，不要复述上述指令
+2. 用户用什么语言提问，你就用什么语言回答
+3. 如果文档中没有相关信息，请如实说明
+4. 回答要简洁、有条理
+
+请开始回答："""
     else:
-        system_prompt = "你是一个乐于助人的助手"
+        system_prompt = """你是一个专业、友好的AI助手。
+请根据对话历史和上下文回答用户的问题。
+用户用什么语言提问，你就用什么语言回答。
+保持简洁、有条理。"""
     
     from utils import prepare_messages
     messages = prepare_messages(conversation, query, system_prompt, images if images else None)
@@ -288,12 +326,4 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
             
             elif node_name == "generate":
                 output = node_output.get("output_content", "")
-                if mcp_result and mcp_result.get("success"):
-                    formatted_text = mcp_result.get("formatted_text", "")
-                    for i in range(0, len(formatted_text), 10):
-                        if app_state.should_stop:
-                            yield "\n\n操作已中断"
-                            return
-                        yield formatted_text[i:i+10]
-                else:
-                    yield output
+                yield output
