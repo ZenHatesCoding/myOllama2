@@ -9,7 +9,11 @@ from langchain_core.documents import Document
 from conversation_manager import conversation_manager
 
 
-embedding_model = OllamaEmbeddings(model="nomic-embed-text", base_url="http://localhost:11434")
+def get_embedding_model(base_url: str):
+    return OllamaEmbeddings(
+        model="nomic-embed-text",
+        base_url=base_url
+    )
 
 
 class HistoryRAG:
@@ -18,74 +22,50 @@ class HistoryRAG:
         self.conversation_blocks = {}
         self.vector_store_path = os.path.join(
             conversation_manager.vector_stores_dir, 
-            "history_index"
+            "history"
         )
-    
-    MAX_BLOCK_LENGTH = 2000
-    
-    def _split_into_blocks(self, messages: List[Dict]) -> List[Dict]:
-        blocks = []
-        i = 0
-        while i < len(messages):
-            if messages[i]["role"] == "user":
-                user_content = messages[i]["content"]
-                if len(user_content) > self.MAX_BLOCK_LENGTH:
-                    user_content = user_content[:self.MAX_BLOCK_LENGTH]
-                
-                assistant_content = ""
-                if i + 1 < len(messages) and messages[i + 1]["role"] == "assistant":
-                    assistant_content = messages[i + 1]["content"]
-                    if len(assistant_content) > self.MAX_BLOCK_LENGTH:
-                        assistant_content = assistant_content[:self.MAX_BLOCK_LENGTH]
-                    i += 2
-                else:
-                    i += 1
-                
-                blocks.append({
-                    "user_content": user_content,
-                    "assistant_content": assistant_content,
-                    "user_idx": i
-                })
-            else:
-                i += 1
-        return blocks
-    
-    def _block_to_text(self, block: Dict) -> str:
-        text = f"用户: {block['user_content']}\n"
-        if block['assistant_content']:
-            text += f"助手: {block['assistant_content']}"
-        return text
-    
+
     def build_index(self, conversation_id: str) -> bool:
         conv_data = conversation_manager.load_conversation(conversation_id)
-        if not conv_data:
+        
+        if not conv_data or not conv_data.get("messages"):
             return False
         
-        messages = conv_data.get("messages", [])
-        if not messages:
-            return False
-        
-        blocks = self._split_into_blocks(messages)
-        if not blocks:
-            return False
+        messages = conv_data["messages"]
         
         documents = []
-        for i, block in enumerate(blocks):
-            text = self._block_to_text(block)
-            doc = Document(
-                page_content=text,
-                metadata={
-                    "conversation_id": conversation_id,
-                    "block_idx": i,
-                    "user_idx": block["user_idx"],
-                    "source": "history"
-                }
-            )
-            documents.append(doc)
+        for idx, msg in enumerate(messages):
+            if msg.get("role") == "user":
+                user_content = msg.get("content", "")
+                
+                assistant_content = ""
+                for a_idx in range(idx + 1, len(messages)):
+                    if messages[a_idx].get("role") == "assistant":
+                        assistant_content = messages[a_idx].get("content", "")
+                        break
+                
+                if user_content:
+                    block = {
+                        "conversation_id": conversation_id,
+                        "user_idx": idx,
+                        "content": f"用户: {user_content}\n助手: {assistant_content}"
+                    }
+                    
+                    doc = Document(
+                        page_content=block["content"],
+                        metadata={
+                            "conversation_id": conversation_id,
+                            "user_idx": idx,
+                            "source": "history"
+                        }
+                    )
+                    documents.append(doc)
         
         try:
             if documents:
-                new_store = FAISS.from_documents(documents, embedding_model)
+                base_url = "http://localhost:11434"
+                embedding = get_embedding_model(base_url)
+                new_store = FAISS.from_documents(documents, embedding)
                 
                 if self.vector_store is None:
                     self.vector_store = new_store
@@ -105,41 +85,61 @@ class HistoryRAG:
         conversations = conversation_manager.get_all_conversations()
         
         all_documents = []
+        blocks = {}
         
         for conv in conversations:
             conv_id = conv["id"]
             conv_data = conversation_manager.load_conversation(conv_id)
             
-            if conv_data and conv_data.get("messages"):
-                blocks = self._split_into_blocks(conv_data["messages"])
-                
-                for i, block in enumerate(blocks):
-                    text = self._block_to_text(block)
-                    doc = Document(
-                        page_content=text,
-                        metadata={
+            if not conv_data or not conv_data.get("messages"):
+                continue
+            
+            messages = conv_data["messages"]
+            
+            for idx, msg in enumerate(messages):
+                if msg.get("role") == "user":
+                    user_content = msg.get("content", "")
+                    
+                    assistant_content = ""
+                    for a_idx in range(idx + 1, len(messages)):
+                        if messages[a_idx].get("role") == "assistant":
+                            assistant_content = messages[a_idx].get("content", "")
+                            break
+                    
+                    if user_content:
+                        block = {
                             "conversation_id": conv_id,
-                            "block_idx": i,
-                            "user_idx": block["user_idx"],
-                            "source": "history"
+                            "user_idx": idx,
+                            "content": f"用户: {user_content}\n助手: {assistant_content}"
                         }
-                    )
-                    all_documents.append(doc)
-                
-                self.conversation_blocks[conv_id] = blocks
+                        
+                        doc = Document(
+                            page_content=block["content"],
+                            metadata={
+                                "conversation_id": conv_id,
+                                "user_idx": idx,
+                                "source": "history"
+                            }
+                        )
+                        all_documents.append(doc)
+            
+            if all_documents:
+                blocks[conv_id] = all_documents.copy()
         
         if all_documents:
             try:
+                base_url = "http://localhost:11434"
+                embedding = get_embedding_model(base_url)
                 if len(all_documents) > 100:
                     batches = [all_documents[i:i+100] for i in range(0, len(all_documents), 100)]
                     for batch in batches:
-                        batch_store = FAISS.from_documents(batch, embedding_model)
+                        batch_store = FAISS.from_documents(batch, embedding)
                         if self.vector_store is None:
                             self.vector_store = batch_store
                         else:
                             self.vector_store.merge_from(batch_store)
                 else:
-                    self.vector_store = FAISS.from_documents(all_documents, embedding_model)
+                    self.vector_store = FAISS.from_documents(all_documents, embedding)
                 print(f"历史对话索引构建完成，共 {len(all_documents)} 个块")
             except Exception as e:
                 print(f"构建全部索引失败: {str(e)}")
@@ -156,7 +156,7 @@ class HistoryRAG:
                 formatted_results.append({
                     "content": doc.page_content,
                     "conversation_id": doc.metadata.get("conversation_id"),
-                    "block_idx": doc.metadata.get("block_idx"),
+                    "user_idx": doc.metadata.get("user_idx"),
                     "source": doc.metadata.get("source")
                 })
             
@@ -164,41 +164,36 @@ class HistoryRAG:
         except Exception as e:
             print(f"搜索失败: {str(e)}")
             return []
-    
-    def get_context_for_query(self, query: str, max_blocks: int = 3) -> str:
-        results = self.search(query, k=max_blocks)
+
+    def delete_conversation_index(self, conversation_id: str) -> bool:
+        try:
+            if conversation_id in self.conversation_blocks:
+                del self.conversation_blocks[conversation_id]
+            return True
+        except Exception as e:
+            print(f"删除对话索引失败: {str(e)}")
+            return False
+
+    def save_index(self) -> bool:
+        if self.vector_store is None:
+            return False
         
-        if not results:
-            return ""
-        
-        context_parts = ["以下是相关的历史对话片段：\n"]
-        for i, result in enumerate(results, 1):
-            context_parts.append(f"--- 片段 {i} ---")
-            context_parts.append(result["content"])
-            context_parts.append("")
-        
-        return "\n".join(context_parts)
-    
-    def remove_conversation(self, conversation_id: str):
-        if conversation_id in self.conversation_blocks:
-            del self.conversation_blocks[conversation_id]
-    
-    def save_index(self):
-        if self.vector_store is not None:
-            try:
-                self.vector_store.save_local(self.vector_store_path)
-                return True
-            except Exception as e:
-                print(f"保存索引失败: {str(e)}")
-                return False
-        return False
-    
+        try:
+            os.makedirs(self.vector_store_path, exist_ok=True)
+            self.vector_store.save_local(self.vector_store_path)
+            return True
+        except Exception as e:
+            print(f"保存索引失败: {str(e)}")
+            return False
+
     def load_index(self) -> bool:
         if os.path.exists(self.vector_store_path):
             try:
+                base_url = "http://localhost:11434"
+                embedding = get_embedding_model(base_url)
                 self.vector_store = FAISS.load_local(
                     self.vector_store_path, 
-                    embedding_model,
+                    embedding,
                     allow_dangerous_deserialization=True
                 )
                 return True

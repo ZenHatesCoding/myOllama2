@@ -4,7 +4,7 @@ import copy
 import threading
 import queue
 from conversation_manager import conversation_manager
-from history_rag import history_rag
+from config_manager import load_config
 
 
 class Message:
@@ -79,15 +79,20 @@ class Conversation:
 
 class AppState:
     def __init__(self):
+        config = load_config()
+        
         self.conversations = {}
         self.current_conversation_id = None
-        self.max_context_turns = 5
-        self.speech_recognition_lang = 'zh-CN'
-        self.speech_synthesis_lang = 'zh-CN'
-        self.max_recording_time = 30
+        self.max_context_turns = config.get("max_context_turns", 5)
+        self.speech_recognition_lang = config.get("speech_recognition_lang", "zh-CN")
+        self.speech_synthesis_lang = config.get("speech_synthesis_lang", "zh-CN")
+        self.max_recording_time = config.get("max_recording_time", 30)
         self.is_generating = False
         self.should_stop = False
         self.response_queue = queue.Queue()
+        
+        self.llm_provider = config.get("llm_provider", "ollama")
+        self.ollama_base_url = config.get("ollama_base_url", "http://localhost:11434")
         
         self._load_from_persistence()
 
@@ -107,6 +112,7 @@ class AppState:
         if persisted_convs:
             self.current_conversation_id = persisted_convs[0]["id"]
         
+        from history_rag import history_rag
         history_rag.build_all_index()
 
     def create_conversation(self):
@@ -134,7 +140,8 @@ class AppState:
             del self.conversations[conversation_id]
             
             conversation_manager.delete_conversation(conversation_id)
-            history_rag.remove_conversation(conversation_id)
+            from history_rag import history_rag
+            history_rag.delete_conversation_index(conversation_id)
             
             if self.current_conversation_id == conversation_id:
                 if self.conversations:
@@ -186,6 +193,7 @@ class AppState:
                 self.conversations[conversation_id] = conv
                 self.current_conversation_id = conversation_id
                 
+                from history_rag import history_rag
                 history_rag.build_index(conversation_id)
                 
                 return True
@@ -196,6 +204,7 @@ class AppState:
         conv = self.get_current_conversation()
         conversation_manager.append_message(conv.id, role, content, images)
         
+        from history_rag import history_rag
         history_rag.build_index(conv.id)
 
     def persist_conversation_name(self, name: str):

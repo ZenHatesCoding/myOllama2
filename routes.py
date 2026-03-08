@@ -7,11 +7,11 @@ from extensions import state
 from utils import (
     load_document, process_document, generate_summary,
     process_image, encode_image_to_base64, prepare_messages,
-    generate_answer, auto_name_conversation
+    generate_answer, auto_name_conversation, get_embedding_model, get_llm_model
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from utils import embedding_model, llm_model
+from config_manager import load_config, save_config
 
 
 def register_routes(app):
@@ -130,7 +130,8 @@ def register_routes(app):
                     for i, chunk in enumerate(document_chunks):
                         chunk.metadata["chunk_index"] = i
                     
-                    conversation.vector_store = FAISS.from_documents(document_chunks, embedding_model)
+                    embedding = get_embedding_model(state.ollama_base_url)
+                    conversation.vector_store = FAISS.from_documents(document_chunks, embedding)
                     conversation.document_file = filename
                     conversation.document_chunks = document_chunks
                     conversation.document_summary = None
@@ -419,7 +420,10 @@ def register_routes(app):
 
     @app.route('/api/config', methods=['GET'])
     def get_config():
+        config = load_config()
         return jsonify({
+            'llm_provider': state.llm_provider,
+            'ollama_base_url': state.ollama_base_url,
             'max_context_turns': state.max_context_turns,
             'speech_recognition_lang': state.speech_recognition_lang,
             'speech_synthesis_lang': state.speech_synthesis_lang,
@@ -430,10 +434,19 @@ def register_routes(app):
     @app.route('/api/config', methods=['PUT'])
     def update_config():
         data = request.json
+        
+        llm_provider = data.get('llm_provider')
+        ollama_base_url = data.get('ollama_base_url')
         max_turns = data.get('max_context_turns')
         speech_recognition_lang = data.get('speech_recognition_lang')
         speech_synthesis_lang = data.get('speech_synthesis_lang')
         max_recording_time = data.get('max_recording_time')
+        
+        if llm_provider:
+            state.llm_provider = llm_provider
+        
+        if ollama_base_url:
+            state.ollama_base_url = ollama_base_url
         
         if max_turns is not None and isinstance(max_turns, int) and max_turns > 0:
             state.max_context_turns = max_turns
@@ -446,6 +459,15 @@ def register_routes(app):
         
         if max_recording_time is not None and isinstance(max_recording_time, int) and 5 <= max_recording_time <= 120:
             state.max_recording_time = max_recording_time
+        
+        config = load_config()
+        config['llm_provider'] = state.llm_provider
+        config['ollama_base_url'] = state.ollama_base_url
+        config['max_context_turns'] = state.max_context_turns
+        config['speech_recognition_lang'] = state.speech_recognition_lang
+        config['speech_synthesis_lang'] = state.speech_synthesis_lang
+        config['max_recording_time'] = state.max_recording_time
+        save_config(config)
         
         return jsonify({
             'success': True,

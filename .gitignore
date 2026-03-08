@@ -33,3 +33,4 @@ conversations/index.json
 !conversations/.gitkeep
 assets/
 vector_stores/
+config.json

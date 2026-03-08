@@ -837,6 +837,8 @@ function loadConfig() {
         .then(response => response.json())
         .then(data => {
             currentConfig = data;
+            document.getElementById('llmProvider').value = data.llm_provider || 'ollama';
+            document.getElementById('ollamaBaseUrl').value = data.ollama_base_url || 'http://localhost:11434';
             document.getElementById('maxContextTurns').value = data.max_context_turns;
             document.getElementById('speechRecognitionLang').value = data.speech_recognition_lang || 'zh-CN';
             document.getElementById('speechSynthesisLang').value = data.speech_synthesis_lang || 'zh-CN';
@@ -857,16 +859,28 @@ function closeConfigModal() {
     document.getElementById('configModal').classList.remove('show');
 }
 
+function onProviderChange() {
+    const provider = document.getElementById('llmProvider').value;
+    const ollamaGroup = document.getElementById('ollamaBaseUrl').closest('.form-group');
+    if (ollamaGroup) {
+        ollamaGroup.style.display = provider === 'ollama' ? 'block' : 'none';
+    }
+}
+
 function saveConfig() {
+    const llmProvider = document.getElementById('llmProvider').value;
+    const ollamaBaseUrl = document.getElementById('ollamaBaseUrl').value;
     const maxTurns = parseInt(document.getElementById('maxContextTurns').value);
     const speechRecognitionLang = document.getElementById('speechRecognitionLang').value;
     const speechSynthesisLang = document.getElementById('speechSynthesisLang').value;
     const maxRecordingTimeInput = parseInt(document.getElementById('maxRecordingTime').value);
 
     fetch('/api/config', {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+            llm_provider: llmProvider,
+            ollama_base_url: ollamaBaseUrl,
             max_context_turns: maxTurns,
             speech_recognition_lang: speechRecognitionLang,
             speech_synthesis_lang: speechSynthesisLang,
@@ -876,10 +890,6 @@ function saveConfig() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                currentConfig = data;
-                updateSpeechRecognitionLang(speechRecognitionLang);
-                updateSpeechSynthesisLang(speechSynthesisLang);
-                maxRecordingTime = data.max_recording_time || 30;
                 closeConfigModal();
                 alert('配置已保存');
             } else {

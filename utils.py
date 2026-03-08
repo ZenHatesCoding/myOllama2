@@ -11,19 +11,28 @@ from langchain_core.documents import Document
 from docx import Document as DocxDocument
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from extensions import state
 from history_rag import history_rag
 from context_config import get_search_k
+from llm_factory import create_llm
 
-embedding_model = OllamaEmbeddings(model="nomic-embed-text", base_url="http://localhost:11434")
-llm_model = ChatOllama(
-    model="qwen3.5:4b",
-    base_url="http://localhost:11434",
-    temperature=0.7
-)
+
+def get_embedding_model(base_url: str):
+    return OllamaEmbeddings(
+        model="nomic-embed-text",
+        base_url=base_url
+    )
+
+
+def get_llm_model(temperature=0.7):
+    return create_llm(
+        provider=state.llm_provider,
+        model="qwen3.5:4b",
+        base_url=state.ollama_base_url if state.llm_provider == "ollama" else None,
+        temperature=temperature
+    )
 
 
 def load_document(file_path, file_type):
@@ -41,14 +50,15 @@ def load_document(file_path, file_type):
     return []
 
 
-def process_document(documents):
+def process_document(documents, base_url: str):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200,
         length_function=len
     )
     texts = text_splitter.split_documents(documents)
-    vector_store = FAISS.from_documents(texts, embedding_model)
+    embedding = get_embedding_model(base_url)
+    vector_store = FAISS.from_documents(texts, embedding)
     return vector_store
 
 
@@ -74,7 +84,8 @@ def generate_summary(messages):
 
 请生成摘要："""
         
-        response = llm_model.invoke(prompt)
+        llm = get_llm_model(temperature=0.3)
+        response = llm.invoke(prompt)
         return response.content.strip()
     except Exception as e:
         print(f"生成摘要失败：{str(e)}")
