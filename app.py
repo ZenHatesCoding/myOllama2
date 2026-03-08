@@ -1,5 +1,5 @@
 from flask import Flask, render_template
-from models import state
+from extensions import state
 from routes import register_routes
 
 app = Flask(__name__)

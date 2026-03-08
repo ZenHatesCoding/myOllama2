@@ -14,7 +14,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from models import state
+from extensions import state
 from history_rag import history_rag
 from context_config import get_search_k
 
@@ -158,7 +158,7 @@ def prepare_messages(conversation, query, system_prompt, images=None):
 async def generate_answer(query, model_name=None):
     from agent import stream_graph
     from tools import news_toolkit
-    from document_tools import document_tools, get_document_summary, search_document, expand_context, get_document_outline
+    from document_tools import document_tools, get_document_summary, search_document, get_document_outline
     
     try:
         conversation = state.get_current_conversation()

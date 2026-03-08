@@ -614,6 +614,8 @@ function uploadFile(event) {
 
     const formData = new FormData();
     formData.append('file', file);
+    
+    const filename = file.name;
 
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
@@ -632,7 +634,7 @@ function uploadFile(event) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn);
+                startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn, filename);
             } else {
                 progressBar.classList.add('hidden');
                 uploadBtn.disabled = false;
@@ -649,12 +651,28 @@ function uploadFile(event) {
     event.target.value = '';
 }
 
-function startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn) {
+function startDocumentProcessing(progressBar, progressText, progressFill, uploadBtn, filename) {
     const eventSource = new EventSource('/api/stream');
     let streamingContent = '';
     let streamingMessageElement = null;
+    let userMessageElement = null;
+    
+    function showUserMessage() {
+        if (!userMessageElement) {
+            const container = document.getElementById('messagesContainer');
+            userMessageElement = document.createElement('div');
+            userMessageElement.className = 'message user';
+            userMessageElement.innerHTML = `
+                <div class="avatar">👤</div>
+                <div class="content">${escapeHtml(`上传文档《${filename}》，请总结`)}</div>
+            `;
+            container.appendChild(userMessageElement);
+            container.scrollTop = container.scrollHeight;
+        }
+    }
     
     function appendChunk(text) {
+        showUserMessage();
         if (!streamingMessageElement) {
             const container = document.getElementById('messagesContainer');
             streamingMessageElement = document.createElement('div');
@@ -709,11 +727,39 @@ function startDocumentProcessing(progressBar, progressText, progressFill, upload
                 uploadBtn.disabled = false;
             }, 1000);
             
-            loadMessages();
+            loadMessages(currentConversationId);
             updateUIState();
+        } else if (data.startsWith('[stopped]')) {
+            eventSource.close();
+            
+            if (userMessageElement) {
+                userMessageElement.remove();
+            }
+            if (streamingMessageElement) {
+                streamingMessageElement.remove();
+            }
+            
+            progressBar.classList.add('hidden');
+            progressFill.style.width = '0%';
+            uploadBtn.disabled = false;
+            isGenerating = false;
+            updateUIState();
+            
+            loadMessages(currentConversationId);
+            updateStatus();
+            
+            const message = data.replace('[stopped]', '');
+            alert(message);
         } else if (data.startsWith('[ERROR]')) {
             const errorMsg = data.replace('[ERROR]', '');
             eventSource.close();
+            
+            if (userMessageElement) {
+                userMessageElement.remove();
+            }
+            if (streamingMessageElement) {
+                streamingMessageElement.remove();
+            }
             
             progressBar.classList.add('hidden');
             progressFill.style.width = '0%';
@@ -727,6 +773,14 @@ function startDocumentProcessing(progressBar, progressText, progressFill, upload
     
     eventSource.onerror = function() {
         eventSource.close();
+        
+        if (userMessageElement) {
+            userMessageElement.remove();
+        }
+        if (streamingMessageElement) {
+            streamingMessageElement.remove();
+        }
+        
         progressBar.classList.add('hidden');
         progressFill.style.width = '0%';
         uploadBtn.disabled = false;

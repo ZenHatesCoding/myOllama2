@@ -3,7 +3,7 @@ import os
 import tempfile
 import queue
 from flask import request, jsonify, Response, render_template
-from models import state
+from extensions import state
 from utils import (
     load_document, process_document, generate_summary,
     process_image, encode_image_to_base64, prepare_messages,
@@ -133,9 +133,7 @@ def register_routes(app):
                     conversation.vector_store = FAISS.from_documents(document_chunks, embedding_model)
                     conversation.document_file = filename
                     conversation.document_chunks = document_chunks
-                    
-                    conversation.add_message("user", f"上传文档《{filename}》，请总结")
-                    state.persist_message("user", f"上传文档《{filename}》，请总结")
+                    conversation.document_summary = None
                     
                     try:
                         os.unlink(temp_file_path)
@@ -144,43 +142,25 @@ def register_routes(app):
                     
                     state.response_queue.put(("progress", "正在生成摘要..."))
                     
-                    if state.should_stop:
-                        state.response_queue.put(("error", "操作已中断"))
-                        return
-                    
-                    full_text = "\n".join([doc.page_content for doc in docs[:10]])
-                    summary_prompt = f"""请用简洁的语言总结以下文档的主要内容，包括：
-1. 文档主题和目的
-2. 主要章节或内容结构
-3. 关键信息点
-
-文档内容（前5000字）：
-{full_text[:5000]}
-
-请用中文回答，控制在300字以内。"""
-                    
-                    from langchain_ollama import ChatOllama
-                    llm = ChatOllama(
-                        model="qwen3.5:4b",
-                        base_url="http://localhost:11434",
-                        temperature=0.7
-                    )
+                    from agent import stream_graph
+                    query = "请总结这个文档的主要内容"
                     
                     summary_text = ""
-                    for chunk in llm.stream([{"role": "user", "content": summary_prompt}]):
+                    for chunk in stream_graph(query, model_name="qwen3.5:4b"):
                         if state.should_stop:
-                            summary_text += "\n\n操作已中断"
                             break
-                        chunk_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                        summary_text += chunk_text
-                        state.response_queue.put(("chunk", chunk_text))
+                        summary_text += chunk
+                        state.response_queue.put(("chunk", chunk))
                     
                     if not state.should_stop:
                         conversation.document_summary = summary_text
+                        conversation.add_message("user", f"上传文档《{filename}》，请总结")
                         conversation.add_message("assistant", summary_text)
+                        state.persist_message("user", f"上传文档《{filename}》，请总结")
                         state.persist_message("assistant", summary_text)
-                    
-                    state.response_queue.put(("done", f"{file_ext.upper()}文件解析完成，共生成 {total_chunks} 个文本块"))
+                        state.response_queue.put(("done", f"{file_ext.upper()}文件解析完成，共生成 {total_chunks} 个文本块"))
+                    else:
+                        state.response_queue.put(("stopped", "操作已中断，文档已加载，可正常问答"))
                     
                 except Exception as e:
                     state.response_queue.put(("error", f"处理失败：{str(e)}"))
@@ -407,7 +387,7 @@ def register_routes(app):
                 try:
                     msg_type, content = state.response_queue.get(timeout=0.1)
                     if msg_type == "chunk":
-                        yield f"data: {content}\n\n"
+                        yield f"data: [chunk]{content}\n\n"
                     elif msg_type == "progress":
                         yield f"data: [PROGRESS]{content}\n\n"
                     elif msg_type == "done":

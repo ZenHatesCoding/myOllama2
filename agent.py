@@ -8,8 +8,8 @@ from langchain_core.tools import tool
 
 from graph import GraphState, create_initial_state
 from tools import get_all_tools, news_toolkit
-from document_tools import document_tools, get_document_summary, search_document, expand_context, get_document_outline
-from models import state
+from document_tools import document_tools, get_document_summary, search_document, get_document_outline
+from extensions import state
 
 
 def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str, Any]]:
@@ -113,11 +113,6 @@ def node_detect_tool(state: GraphState) -> dict:
                 "query": parameters.get("query", query),
                 "k": parameters.get("k", 4)
             })}
-        elif tool_name == "expand_context":
-            result = {"success": True, "tool_name": tool_name, "formatted_text": expand_context.invoke({
-                "chunk_id": parameters.get("chunk_id", 0),
-                "direction": parameters.get("direction", "both")
-            })}
         elif tool_name == "get_document_outline":
             result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_outline.invoke({})}
         
@@ -134,7 +129,7 @@ def node_retrieve_document(state: GraphState) -> dict:
     conversation = state.get_current_conversation() if hasattr(state, 'get_current_conversation') else None
     
     if not conversation:
-        from models import state as app_state
+        from extensions import state as app_state
         conversation = app_state.get_current_conversation()
     
     if conversation and conversation.vector_store:
@@ -157,26 +152,32 @@ def node_generate(state: GraphState) -> dict:
         return {"output_content": "操作已中断"}
     
     mcp_result = state.get("mcp_result")
-    
-    if mcp_result and mcp_result.get("success"):
-        tool_name = mcp_result.get("tool_name", "")
-        formatted_text = mcp_result.get("formatted_text", "")
-        
-        tool_display_names = {
-            "get_headlines": "头条新闻",
-            "get_news_by_type": "分类新闻",
-            "search_news": "新闻搜索"
-        }
-        tool_display_name = tool_display_names.get(tool_name, tool_name)
-        
-        full_text = f"📰 正在从{tool_display_name}获取信息...\n\n{formatted_text}"
-        return {"output_content": full_text}
-    
     model_name = state.get("model_name", "qwen3.5:4b")
     query = state.get("query", "")
     images = state.get("images", [])
     has_document = state.get("has_document", False)
     document_context = state.get("document_context", "")
+    
+    news_tools = ["get_headlines", "get_news_by_type", "search_news"]
+    document_tools_list = ["get_document_summary", "search_document", "get_document_outline"]
+    
+    if mcp_result and mcp_result.get("success"):
+        tool_name = mcp_result.get("tool_name", "")
+        formatted_text = mcp_result.get("formatted_text", "")
+        
+        if tool_name in news_tools:
+            tool_display_names = {
+                "get_headlines": "头条新闻",
+                "get_news_by_type": "分类新闻",
+                "search_news": "新闻搜索"
+            }
+            tool_display_name = tool_display_names.get(tool_name, tool_name)
+            full_text = f"📰 正在从{tool_display_name}获取信息...\n\n{formatted_text}"
+            return {"output_content": full_text}
+        
+        if tool_name in document_tools_list:
+            document_context = formatted_text
+            has_document = True
     
     llm = ChatOllama(
         model=model_name,
@@ -184,7 +185,7 @@ def node_generate(state: GraphState) -> dict:
         temperature=0.7
     )
     
-    from models import state as app_state
+    from extensions import state as app_state
     conversation = app_state.get_current_conversation()
     
     if has_document and document_context:
@@ -257,7 +258,7 @@ def run_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = N
 
 
 def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None):
-    from models import state as app_state
+    from extensions import state as app_state
     
     initial_state = create_initial_state(query, model_name, images)
     executor = get_graph_executor()
@@ -280,7 +281,6 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
                         "search_news": "新闻搜索",
                         "get_document_summary": "文档摘要",
                         "search_document": "文档搜索",
-                        "expand_context": "扩展上下文",
                         "get_document_outline": "文档大纲"
                     }
                     tool_display_name = tool_display_names.get(tool_name, tool_name)
