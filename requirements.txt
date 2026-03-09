@@ -11,3 +11,6 @@ requests
 mss
 httpx
 pydantic
+Pillow
+langchain-openai
+langchain-anthropic
