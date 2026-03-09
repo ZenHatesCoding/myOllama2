@@ -862,6 +862,7 @@ function loadConfig() {
             maxRecordingTime = data.max_recording_time || 30;
             
             onProviderChange();
+            updateModelSelectForProvider();
         })
         .catch(error => console.error('加载配置失败:', error));
 }
@@ -895,6 +896,50 @@ function onProviderChange() {
         const el = document.getElementById(id);
         if (el) el.style.display = provider === 'anthropic' ? 'block' : 'none';
     });
+    
+    updateModelSelectForProvider();
+}
+
+function updateModelSelectForProvider() {
+    const provider = document.getElementById('llmProvider').value;
+    const modelSelect = document.getElementById('modelSelect');
+    
+    modelSelect.innerHTML = '';
+    
+    if (provider === 'ollama') {
+        const ollamaModels = [
+            { value: 'qwen3:8b', text: 'qwen3:8b (文本)' },
+            { value: 'qwen3:14b', text: 'qwen3:14b (文本)' },
+            { value: 'deepseek-r1:8b', text: 'deepseek-r1:8b (文本)' },
+            { value: 'qwen3-vl:8b', text: 'qwen3-vl:8b (多模态)' },
+            { value: 'qwen3.5:0.8b', text: 'qwen3.5:0.8b (多模态)' },
+            { value: 'qwen3.5:4b', text: 'qwen3.5:4b (多模态)' },
+            { value: 'qwen3.5:9b', text: 'qwen3.5:9b (多模态)' }
+        ];
+        ollamaModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.value;
+            option.textContent = model.text;
+            if (model.value === 'qwen3.5:9b') option.selected = true;
+            modelSelect.appendChild(option);
+        });
+    } else if (provider === 'openai') {
+        const openaiModel = document.getElementById('openaiModel').value || 'gpt-4o';
+        const option = document.createElement('option');
+        option.value = openaiModel;
+        option.textContent = openaiModel;
+        option.selected = true;
+        modelSelect.appendChild(option);
+    } else if (provider === 'anthropic') {
+        const anthropicModel = document.getElementById('anthropicModel').value || 'claude-sonnet-4-20250514';
+        const option = document.createElement('option');
+        option.value = anthropicModel;
+        option.textContent = anthropicModel;
+        option.selected = true;
+        modelSelect.appendChild(option);
+    }
+    
+    currentModel = modelSelect.value;
 }
 
 function saveConfig() {
@@ -933,6 +978,7 @@ function saveConfig() {
         .then(data => {
             if (data.success) {
                 closeConfigModal();
+                updateModelSelectForProvider();
                 alert('配置已保存');
             } else {
                 alert(data.error);
