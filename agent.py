@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from graph import GraphState, create_initial_state
 from tools import get_all_tools, news_toolkit
-from document_tools import document_tools, get_document_summary, search_document, get_document_outline
+from document_tools import document_tools, get_document_summary, get_document_outline
 from extensions import state
 from llm_factory import create_llm
 
@@ -140,12 +140,6 @@ def node_detect_tool(state: GraphState) -> dict:
         elif tool_name == "get_document_summary":
             n_chunks = level_config.get("n_chunks", 30)
             result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_summary.invoke({"n_chunks": n_chunks})}
-        elif tool_name == "search_document":
-            k = level_config.get("k", 8)
-            result = {"success": True, "tool_name": tool_name, "formatted_text": search_document.invoke({
-                "query": parameters.get("query", query),
-                "k": k
-            })}
         elif tool_name == "get_document_outline":
             result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_outline.invoke({})}
         
@@ -158,35 +152,96 @@ def node_detect_tool(state: GraphState) -> dict:
 
 def node_retrieve_document(state: GraphState) -> dict:
     from graph import DISCLOSURE_LEVELS
+    from retriever import create_retriever
     
     if state.get("should_stop"):
         return {}
     
+    query = state.get("query", "")
     disclosure_level = state.get("disclosure_level", "relevant")
     level_config = DISCLOSURE_LEVELS.get(disclosure_level, DISCLOSURE_LEVELS["relevant"])
+    
+    from extensions import state as app_state
+    provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
     
     conversation = state.get_current_conversation() if hasattr(state, 'get_current_conversation') else None
     
     if not conversation:
-        from extensions import state as app_state
         conversation = app_state.get_current_conversation()
     
-    if conversation and conversation.vector_store:
-        query = state.get("query", "")
-        k = level_config.get("k", 8)
-        relevant_docs = conversation.vector_store.similarity_search(query, k=k)
-        context = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else "无相关内容"
-        return {
-            "has_document": True,
-            "document_context": context,
-            "disclosure_level": disclosure_level
-        }
+    if not conversation or not conversation.document_chunks:
+        return {"has_document": False, "document_context": "", "disclosure_level": disclosure_level}
+    
+    retriever = create_retriever(conversation, provider)
+    if not retriever:
+        return {"has_document": False, "document_context": "", "disclosure_level": disclosure_level}
+    
+    k = level_config.get("k", 8)
+    relevant_docs = retriever.retrieve(query, k=k)
+    main_context = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else "无相关内容"
+    
+    outline = get_document_outline.invoke({})
+    summary = get_document_summary.invoke({"n_chunks": 10})
+    
+    full_context = f"""【相关片段】
+{main_context}
+
+【文档大纲】
+{outline}
+
+【文档摘要】
+{summary}
+"""
     
     return {
-        "has_document": False,
-        "document_context": "",
+        "has_document": True,
+        "document_context": full_context,
         "disclosure_level": disclosure_level
     }
+
+
+def node_retrieve_history(state: GraphState) -> dict:
+    from extensions import state as app_state
+    
+    provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
+    query = state.get("query", "")
+    
+    total_turns = 0
+    conversation = None
+    try:
+        conversation = app_state.get_current_conversation() if hasattr(app_state, 'get_current_conversation') else None
+        if conversation:
+            total_turns = conversation.get_total_turns()
+    except:
+        pass
+    
+    if total_turns <= app_state.max_context_turns:
+        return {"history_context": ""}
+    
+    from history_rag import history_rag
+    
+    llm = None
+    if provider != "ollama":
+        from llm_factory import create_llm
+        if provider == "openai":
+            llm = create_llm(
+                provider="openai",
+                model=app_state.openai_model if hasattr(app_state, 'openai_model') else "gpt-4",
+                base_url=app_state.openai_base_url if hasattr(app_state, 'openai_base_url') else None,
+                api_key=app_state.openai_api_key if hasattr(app_state, 'openai_api_key') else None,
+                temperature=0.3
+            )
+        elif provider == "anthropic":
+            llm = create_llm(
+                provider="anthropic",
+                model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else "claude-3-sonnet-20240229",
+                api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
+                temperature=0.3
+            )
+    
+    history_context = history_rag.get_context(query, provider=provider, llm=llm, k=3)
+    
+    return {"history_context": history_context or ""}
 
 
 def node_generate(state: GraphState) -> dict:
@@ -199,9 +254,10 @@ def node_generate(state: GraphState) -> dict:
     images = state.get("images", [])
     has_document = state.get("has_document", False)
     document_context = state.get("document_context", "")
+    history_context = state.get("history_context", "")
     
     news_tools = ["get_headlines", "get_news_by_type", "search_news"]
-    document_tools_list = ["get_document_summary", "search_document", "get_document_outline"]
+    document_tools_list = ["get_document_summary", "get_document_outline"]
     
     if mcp_result and mcp_result.get("success"):
         tool_name = mcp_result.get("tool_name", "")
@@ -275,6 +331,22 @@ def node_generate(state: GraphState) -> dict:
 4. 回答要简洁、有条理
 
 请开始回答："""
+    elif history_context:
+        system_prompt = f"""你是一个专业、友好的AI助手。
+请根据对话历史和当前上下文回答用户的问题。
+
+【用户问题】
+{query}
+
+【历史对话上下文】
+{history_context}
+
+【回答要求】
+1. 结合历史对话和当前问题回答
+2. 用户用什么语言提问，你就用什么语言回答
+3. 回答要简洁、有条理
+
+请开始回答："""
     else:
         system_prompt = """你是一个专业、友好的AI助手。
 请根据对话历史和上下文回答用户的问题。
@@ -307,6 +379,7 @@ def build_graph():
     
     graph.add_node("detect_tool", node_detect_tool)
     graph.add_node("retrieve_document", node_retrieve_document)
+    graph.add_node("retrieve_history", node_retrieve_history)
     graph.add_node("generate", node_generate)
     
     graph.set_entry_point("detect_tool")
@@ -320,7 +393,8 @@ def build_graph():
         }
     )
     
-    graph.add_edge("retrieve_document", "generate")
+    graph.add_edge("retrieve_document", "retrieve_history")
+    graph.add_edge("retrieve_history", "generate")
     graph.add_edge("generate", END)
     
     return graph.compile(checkpointer=MemorySaver())
@@ -368,7 +442,6 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
                         "get_news_by_type": "分类新闻",
                         "search_news": "新闻搜索",
                         "get_document_summary": "文档摘要",
-                        "search_document": "文档搜索",
                         "get_document_outline": "文档大纲"
                     }
                     tool_display_name = tool_display_names.get(tool_name, tool_name)

@@ -164,10 +164,6 @@ def prepare_messages(conversation, query, system_prompt, images=None):
         if conversation.summary:
             messages.append(SystemMessage(content=f"之前的对话摘要：{conversation.summary}"))
         
-        history_context = history_rag.get_context_for_query(query, max_blocks=3)
-        if history_context:
-            messages.append(SystemMessage(content=history_context))
-        
         recent_messages = conversation.messages[-state.max_context_turns * 2:]
         for msg in recent_messages:
             if msg.role == "user":
@@ -208,7 +204,7 @@ def prepare_messages(conversation, query, system_prompt, images=None):
 async def generate_answer(query, model_name=None):
     from agent import stream_graph
     from tools import news_toolkit
-    from document_tools import document_tools, get_document_summary, search_document, get_document_outline
+    from document_tools import document_tools, get_document_summary, get_document_outline
     
     try:
         conversation = state.get_current_conversation()

@@ -212,7 +212,6 @@ def decide_disclosure_level(query: str) -> str:
 | `get_news_by_type` | NewsMCP | 按分类获取新闻 |
 | `search_news` | NewsMCP | 关键词搜索新闻 |
 | `get_document_summary` | DocumentTool | 获取文档摘要 |
-| `search_document` | DocumentTool | 语义检索文档 |
 | `get_document_outline` | DocumentTool | 获取文档大纲 |
 
 #### LangGraph 与 MCP 的集成
@@ -335,108 +334,133 @@ myOllama/
 
 ## 待办事项
 
-### Bug
-
-- [ ] **流式输出卡住问题**：聊天时流式输出会卡住，需要手动刷新页面才能看到完整回答。可能与 SSE 连接未正确关闭或前端消息处理逻辑有关。
+（暂无）
 
 ---
 
-### 功能 - API 模式 LLM 决策
+## API 模式实现
 
-#### 1. 历史对话 RAG - LLM 方案
+### 架构设计
 
-**问题**：API 模式下无法使用 embedding 构建向量索引
-
-**方案**：用 LLM 做历史对话检索
+项目采用统一的检索策略接口，同时支持 Ollama 和 API 模式：
 
 ```
-流程：
-1. 读取对话目录，获取所有对话的元信息（ID、名称、摘要）
-2. 将对话元信息 + 当前问题发给 LLM
-3. LLM 判断哪些历史对话与当前问题相关
-4. 读取 LLM 选中的对话内容
-5. 将相关对话内容添加到上下文
+┌─────────────────────────────────────────────────────────────────┐
+│                    LangGraph 工作流                              │
+│                                                                  │
+│  query → detect_tool → retrieve_document → retrieve_history → │
+│                               │                    │            │
+│                               ▼                    ▼            │
+│                    文档检索 (retriever)    历史 RAG            │
+│                    - Ollama: FAISS         - Ollama: FAISS    │
+│                    - API: 直接取块         - API: LLM 判断    │
+│                               │                    │            │
+│                               └────────┬───────────┘            │
+│                                        ▼                         │
+│                              generate (生成回答)                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**实现位置**：history_rag.py
+### 1. 文档问答
 
-**关键代码思路**：
+#### 统一检索接口 (retriever.py)
 
 ```python
-def retrieve_history_with_llm(query, current_conversation_id):
-    # 1. 获取所有对话元信息
-    conversations = conversation_manager.get_all_conversations()
+class DocumentRetriever(ABC):
+    def retrieve(self, query: str, k: int) -> List[Document]:
+        pass
 
-    # 2. 构建选择提示
-    conv_list = "\n".join([f"- {c['name']}: {c.get('summary', '')}" for c in conversations])
+class FAISSRetriever(DocumentRetriever):
+    def retrieve(self, query: str, k: int):
+        return self.vector_store.similarity_search(query, k=k)
 
-    prompt = f"""当前问题：{query}
+class DirectChunkRetriever(DocumentRetriever):
+    def retrieve(self, query: str, k: int):
+        return self.chunks[:k]  # 直接取前 k 个块
 
-历史对话列表：
-{conv_list}
-
-请选择与当前问题最相关的3个对话，返回对话ID列表。"""
-
-    # 3. LLM 选择
-    llm = get_llm_model()
-    selected_ids = llm.invoke(prompt)
-
-    # 4. 读取选中对话内容
-    relevant_history = []
-    for conv_id in selected_ids:
-        conv_data = conversation_manager.load_conversation(conv_id)
-        relevant_history.append(conv_data)
-
-    return relevant_history
+def create_retriever(conversation, provider: str):
+    if provider == "ollama" and conversation.vector_store:
+        return FAISSRetriever(conversation.vector_store, conversation.document_chunks)
+    else:
+        return DirectChunkRetriever(conversation.document_chunks)
 ```
 
----
-
-#### 2. 文档问答 - LLM 方案
-
-**问题**：API 模式下没有向量索引，无法做语义检索
-
-**方案**：直接把文档内容给 LLM，让 LLM 自己理解
-
-```
-流程：
-1. 用户上传文档 → 只做文本分块，不构建向量索引
-2. 用户提问时，根据 disclosure_level 决定取多少块
-3. 将文档块内容直接发给 LLM
-4. LLM 根据文档内容回答问题
-```
-
-**实现位置**：agent.py - node_retrieve_document
-
-**关键代码思路**：
+#### 渐进式披露 + MCP 协同
 
 ```python
 def node_retrieve_document(state: GraphState) -> dict:
-    # ...获取 conversation 和 chunks...
+    retriever = create_retriever(conversation, provider)
+    k = level_config.get("k", 8)
+    relevant_docs = retriever.retrieve(query, k=k)
+    
+    outline = get_document_outline.invoke({})
+    summary = get_document_summary.invoke({"n_chunks": 10})
+    
+    full_context = f"""【相关片段】
+{main_context}
 
-    if conversation.vector_store and provider == "ollama":
-        # Ollama 模式：使用向量检索（原有逻辑）
-        k = level_config.get("k", 8)
-        relevant_docs = conversation.vector_store.similarity_search(query, k=k)
-        context = "\n\n".join([doc.page_content for doc in relevant_docs])
-    else:
-        # API 模式：直接取文档块，让 LLM 决定哪些相关
-        if disclosure_level == "summary":
-            n_chunks = 30
-        elif disclosure_level == "full":
-            n_chunks = len(chunks)
-        else:
-            n_chunks = 10
-        selected_chunks = chunks[:n_chunks]
-        context = "\n\n".join([chunk.page_content for chunk in selected_chunks])
+【文档大纲】
+{outline}
 
-    return {"has_document": True, "document_context": context}
+【文档摘要】
+{summary}
+"""
 ```
 
-**注意**：
-- disclosure_level = "relevant" 时，取前 10 个块发给 LLM（而非向量检索的 8 个）
-- LLM 自身有强大的理解能力，可以忽略不相关内容
-- 文档内容直接作为上下文，理论上比向量检索更准确（因为保留了完整上下文）
+### 2. 历史对话 RAG
+
+#### 统一上下文接口 (history_rag.py)
+
+```python
+class HistoryRAG:
+    def get_context(self, query: str, provider: str, llm=None, k: int = 3):
+        if provider == "ollama" and self.vector_store:
+            return self._get_context_with_faiss(query, k)
+        else:
+            return self._get_context_with_llm(query, llm, k)
+    
+    def _get_context_with_faiss(self, query: str, k: int):
+        results = self.search(query, k=k)
+        return format_results(results)
+    
+    def _get_context_with_llm(self, query: str, llm, k: int):
+        # 1. 获取所有对话元信息
+        conversations = conversation_manager.get_all_conversations()
+        
+        # 2. LLM 判断哪些历史对话相关
+        prompt = f"""当前问题：{query}
+历史对话列表：{conv_list}
+请选择最相关的 {k} 个对话ID（用逗号分隔）。"""
+        
+        selected_ids = llm.invoke(prompt).content.split(",")
+        
+        # 3. 读取选中对话内容并返回
+        return load_selected_conversations(selected_ids)
+```
+
+#### LangGraph 集成
+
+```python
+def node_retrieve_history(state: GraphState) -> dict:
+    provider = app_state.llm_provider
+    
+    if total_turns > max_context_turns:
+        llm = create_llm(provider) if provider != "ollama" else None
+        history_context = history_rag.get_context(query, provider, llm, k=3)
+    
+    return {"history_context": history_context or ""}
+```
+
+### 3. 复用设计
+
+| 模块 | Ollama 模式 | API 模式 |
+|------|------------|----------|
+| 文档检索 | FAISS 向量检索 | DirectChunkRetriever 直接取块 |
+| 历史 RAG | FAISS 向量检索 | LLM 判断选择 |
+| MCP 工具 | Ollama LLM | API LLM |
+| LLM 调用 | ChatOllama | ChatOpenAI / ChatAnthropic |
+
+通过统一的接口 + provider 参数切换，实现最大程度的代码复用。
 
 ---
 

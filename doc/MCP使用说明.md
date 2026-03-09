@@ -184,7 +184,6 @@ mcp_manager.register_mcp(NewsMCP(api_key="your_juhe_api_key_here"))
 | 工具名称 | 功能 | 参数 |
 |---------|------|------|
 | `get_document_summary` | 获取文档摘要 | `n_chunks` (可选) |
-| `search_document` | 语义检索文档 | `query` (必需), `k` (可选) |
 | `get_document_outline` | 获取文档大纲 | 无 |
 
 ## 演示数据模式
@@ -291,6 +290,6 @@ A: MCP 工具通过 `node_detect_tool` 节点被调用，使用 LLM 进行意图
 
 ### v7.0.0
 - MCP 工具集成到 LangGraph 工作流
-- 新增文档工具（get_document_summary, search_document, get_document_outline）
+- 新增文档工具（get_document_summary, get_document_outline）
 - LLM 意图识别 + 自动工具调用
 - 统一通过 agent.py 调用 MCP

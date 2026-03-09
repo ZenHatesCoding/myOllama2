@@ -16,6 +16,7 @@ class GraphState(TypedDict):
     has_document: bool
     document_context: str
     disclosure_level: str
+    history_context: str
 
 
 DISCLOSURE_LEVELS = {
