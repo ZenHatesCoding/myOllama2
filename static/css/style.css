@@ -601,6 +601,12 @@ body {
     font-size: 0.8em;
 }
 
+.status-bar .shortcut-hint {
+    color: #888;
+    font-size: 0.8em;
+    margin-right: auto;
+}
+
 .modal {
     display: none;
     position: fixed;

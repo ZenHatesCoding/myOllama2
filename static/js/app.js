@@ -14,6 +14,7 @@ let currentModel = 'qwen3.5:9b';
 
 let recognition = null;
 let isRecording = false;
+let isTakingScreenshot = false;
 let recordingTimer = null;
 let maxRecordingTime = 30;
 
@@ -29,6 +30,14 @@ function init() {
     initSpeechRecognition();
     initTTS();
     startStatusPolling();
+    document.addEventListener('keydown', handleGlobalKeydown);
+}
+
+function handleGlobalKeydown(event) {
+    if (event.altKey && event.key === 'a') {
+        event.preventDefault();
+        takeScreenshot();
+    }
 }
 
 function startStatusPolling() {
@@ -1061,6 +1070,9 @@ function handleImageUpload(event) {
 }
 
 function takeScreenshot() {
+    if (isTakingScreenshot) return;
+    isTakingScreenshot = true;
+    
     document.getElementById('statusText').textContent = '正在截图...';
     
     fetch('/api/screenshot', { method: 'POST' })
@@ -1081,6 +1093,9 @@ function takeScreenshot() {
             document.getElementById('statusText').textContent = '就绪';
             console.error('截图失败:', error);
             alert('截图失败');
+        })
+        .finally(() => {
+            isTakingScreenshot = false;
         });
 }
 
