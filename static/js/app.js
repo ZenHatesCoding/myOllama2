@@ -31,6 +31,7 @@ function init() {
     initTTS();
     startStatusPolling();
     document.addEventListener('keydown', handleGlobalKeydown);
+    initDragAndDrop();
 }
 
 function handleGlobalKeydown(event) {
@@ -1180,6 +1181,96 @@ function updateModelForImages() {
         Array.from(modelSelect.options).forEach(option => {
             option.disabled = false;
         });
+    }
+}
+
+function initDragAndDrop() {
+    const mainContent = document.querySelector('.main-content');
+    if (!mainContent) return;
+
+    mainContent.addEventListener('dragover', handleDragOver);
+    mainContent.addEventListener('dragenter', handleDragEnter);
+    mainContent.addEventListener('dragleave', handleDragLeave);
+    mainContent.addEventListener('drop', handleDrop);
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function handleDragEnter(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        mainContent.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent && !mainContent.contains(e.relatedTarget)) {
+        mainContent.classList.remove('drag-over');
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        mainContent.classList.remove('drag-over');
+    }
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const imageFiles = [];
+    const documentFiles = [];
+
+    for (let file of files) {
+        if (file.type.startsWith('image/')) {
+            imageFiles.push(file);
+        } else if (isDocumentFile(file)) {
+            documentFiles.push(file);
+        } else {
+            console.warn('不支持的文件类型:', file.type, file.name);
+        }
+    }
+
+    if (imageFiles.length > 0) {
+        handleDragImageUpload(imageFiles);
+    }
+
+    if (documentFiles.length > 0) {
+        handleDragDocumentUpload(documentFiles);
+    }
+}
+
+function isDocumentFile(file) {
+    const docExtensions = ['pdf', 'docx', 'txt'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    return docExtensions.includes(ext);
+}
+
+function handleDragImageUpload(files) {
+    for (let file of files) {
+        const fakeEvent = {
+            target: { files: [file] }
+        };
+        handleImageUpload(fakeEvent);
+    }
+}
+
+function handleDragDocumentUpload(files) {
+    for (let file of files) {
+        const fakeEvent = {
+            target: { files: [file] }
+        };
+        uploadFile(fakeEvent);
     }
 }
 

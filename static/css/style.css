@@ -442,6 +442,12 @@ body {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    transition: background-color 0.3s, border-color 0.3s;
+}
+
+.main-content.drag-over {
+    background-color: #f0f4ff;
+    border: 2px dashed #667eea;
 }
 
 .input-wrapper {
