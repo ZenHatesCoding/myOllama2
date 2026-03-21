@@ -48,6 +48,7 @@ def get_llm_model(temperature=0.7):
         return create_llm(
             provider="anthropic",
             model=state.anthropic_model,
+            base_url=state.anthropic_base_url,
             api_key=state.anthropic_api_key or None,
             temperature=temperature
         )
@@ -110,7 +111,18 @@ def generate_summary(messages):
         
         llm = get_llm_model(temperature=0.3)
         response = llm.invoke(prompt)
-        return response.content.strip()
+        
+        content = response.content
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    text_parts.append(part.get('text', ''))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content = ''.join(text_parts)
+        
+        return content.strip()
     except Exception as e:
         print(f"生成摘要失败：{str(e)}")
         return None

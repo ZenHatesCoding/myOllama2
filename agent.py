@@ -41,8 +41,20 @@ def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str,
             SystemMessage(content=system_prompt),
             HumanMessage(content=query)
         ])
-        
-        result_text = response.content.strip()
+
+        content = response.content
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    text_parts.append(part.get('text', ''))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            result_text = ''.join(text_parts)
+        else:
+            result_text = str(content)
+
+        result_text = result_text.strip()
         result_text = result_text.replace('```json', '').replace('```', '').strip()
         
         try:
@@ -107,6 +119,7 @@ def node_detect_tool(state: GraphState) -> dict:
         llm = create_llm(
             provider="anthropic",
             model=state.anthropic_model if hasattr(state, 'anthropic_model') else model_name,
+            base_url=state.anthropic_base_url if hasattr(state, 'anthropic_base_url') else None,
             api_key=state.anthropic_api_key if hasattr(state, 'anthropic_api_key') else None,
             temperature=0.3
         )
@@ -235,6 +248,7 @@ def node_retrieve_history(state: GraphState) -> dict:
             llm = create_llm(
                 provider="anthropic",
                 model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else "claude-3-sonnet-20240229",
+                base_url=app_state.anthropic_base_url if hasattr(app_state, 'anthropic_base_url') else None,
                 api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
                 temperature=0.3
             )
@@ -300,6 +314,7 @@ def node_generate(state: GraphState) -> dict:
         llm = create_llm(
             provider="anthropic",
             model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else model_name,
+            base_url=app_state.anthropic_base_url if hasattr(app_state, 'anthropic_base_url') else None,
             api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
             temperature=0.7
         )
@@ -361,7 +376,18 @@ def node_generate(state: GraphState) -> dict:
         if app_state.should_stop:
             output_content += "\n\n操作已中断"
             break
-        chunk_text = str(chunk.content)
+        
+        if hasattr(chunk, 'content') and isinstance(chunk.content, list):
+            text_parts = []
+            for part in chunk.content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    text_parts.append(part.get('text', ''))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            chunk_text = ''.join(text_parts)
+        else:
+            chunk_text = str(chunk.content)
+        
         output_content += chunk_text
     
     return {"output_content": output_content}

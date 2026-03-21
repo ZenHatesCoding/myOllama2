@@ -31,6 +31,7 @@
 - **默认模型**：qwen3.5:9b
 - **自动切换**：上传图片或截图时自动切换到多模态模型
 - **多 Provider 支持**：支持 Ollama、OpenAI 兼容 API、Anthropic 兼容 API
+- **API 配置注意**：Anthropic 兼容模式地址末尾是 `/anthropic`，`langchain_anthropic` 会自动加 `/v1/messages`
 
 ## 环境要求
 
