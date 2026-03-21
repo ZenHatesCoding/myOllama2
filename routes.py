@@ -425,12 +425,12 @@ def register_routes(app):
         return jsonify({
             'llm_provider': state.llm_provider,
             'ollama_base_url': state.ollama_base_url,
-            'openai_api_key': state.openai_api_key,
-            'openai_base_url': state.openai_base_url,
-            'openai_model': state.openai_model,
-            'anthropic_api_key': state.anthropic_api_key,
-            'anthropic_base_url': state.anthropic_base_url,
-            'anthropic_model': state.anthropic_model,
+            'openai_endpoints': state.openai_endpoints,
+            'openai_current_endpoint': state.openai_current_endpoint,
+            'openai_current_model': state.openai_current_model,
+            'anthropic_endpoints': state.anthropic_endpoints,
+            'anthropic_current_endpoint': state.anthropic_current_endpoint,
+            'anthropic_current_model': state.anthropic_current_model,
             'max_context_turns': state.max_context_turns,
             'speech_recognition_lang': state.speech_recognition_lang,
             'speech_synthesis_lang': state.speech_synthesis_lang,
@@ -441,67 +441,67 @@ def register_routes(app):
     @app.route('/api/config', methods=['PUT'])
     def update_config():
         data = request.json
-        
+
         llm_provider = data.get('llm_provider')
         ollama_base_url = data.get('ollama_base_url')
-        openai_api_key = data.get('openai_api_key')
-        openai_base_url = data.get('openai_base_url')
-        openai_model = data.get('openai_model')
-        anthropic_api_key = data.get('anthropic_api_key')
-        anthropic_base_url = data.get('anthropic_base_url')
-        anthropic_model = data.get('anthropic_model')
+        openai_endpoints = data.get('openai_endpoints')
+        openai_current_endpoint = data.get('openai_current_endpoint')
+        openai_current_model = data.get('openai_current_model')
+        anthropic_endpoints = data.get('anthropic_endpoints')
+        anthropic_current_endpoint = data.get('anthropic_current_endpoint')
+        anthropic_current_model = data.get('anthropic_current_model')
         max_turns = data.get('max_context_turns')
         speech_recognition_lang = data.get('speech_recognition_lang')
         speech_synthesis_lang = data.get('speech_synthesis_lang')
         max_recording_time = data.get('max_recording_time')
-        
+
         if llm_provider:
             state.llm_provider = llm_provider
-        
+
         if ollama_base_url:
             state.ollama_base_url = ollama_base_url
-        
-        if openai_api_key is not None:
-            state.openai_api_key = openai_api_key
-        if openai_base_url is not None:
-            state.openai_base_url = openai_base_url
-        if openai_model is not None:
-            state.openai_model = openai_model
-        
-        if anthropic_api_key is not None:
-            state.anthropic_api_key = anthropic_api_key
-        if anthropic_base_url is not None:
-            state.anthropic_base_url = anthropic_base_url
-        if anthropic_model is not None:
-            state.anthropic_model = anthropic_model
-        
+
+        if openai_endpoints is not None:
+            state.openai_endpoints = openai_endpoints
+        if openai_current_endpoint is not None:
+            state.openai_current_endpoint = openai_current_endpoint
+        if openai_current_model is not None:
+            state.openai_current_model = openai_current_model
+
+        if anthropic_endpoints is not None:
+            state.anthropic_endpoints = anthropic_endpoints
+        if anthropic_current_endpoint is not None:
+            state.anthropic_current_endpoint = anthropic_current_endpoint
+        if anthropic_current_model is not None:
+            state.anthropic_current_model = anthropic_current_model
+
         if max_turns is not None and isinstance(max_turns, int) and max_turns > 0:
             state.max_context_turns = max_turns
-        
+
         if speech_recognition_lang:
             state.speech_recognition_lang = speech_recognition_lang
-        
+
         if speech_synthesis_lang:
             state.speech_synthesis_lang = speech_synthesis_lang
-        
+
         if max_recording_time is not None and isinstance(max_recording_time, int) and 5 <= max_recording_time <= 120:
             state.max_recording_time = max_recording_time
-        
+
         config = load_config()
         config['llm_provider'] = state.llm_provider
         config['ollama_base_url'] = state.ollama_base_url
-        config['openai_api_key'] = state.openai_api_key
-        config['openai_base_url'] = state.openai_base_url
-        config['openai_model'] = state.openai_model
-        config['anthropic_api_key'] = state.anthropic_api_key
-        config['anthropic_base_url'] = state.anthropic_base_url
-        config['anthropic_model'] = state.anthropic_model
+        config['openai_endpoints'] = state.openai_endpoints
+        config['openai_current_endpoint'] = state.openai_current_endpoint
+        config['openai_current_model'] = state.openai_current_model
+        config['anthropic_endpoints'] = state.anthropic_endpoints
+        config['anthropic_current_endpoint'] = state.anthropic_current_endpoint
+        config['anthropic_current_model'] = state.anthropic_current_model
         config['max_context_turns'] = state.max_context_turns
         config['speech_recognition_lang'] = state.speech_recognition_lang
         config['speech_synthesis_lang'] = state.speech_synthesis_lang
         config['max_recording_time'] = state.max_recording_time
         save_config(config)
-        
+
         return jsonify({
             'success': True,
             'max_context_turns': state.max_context_turns,
@@ -509,3 +509,235 @@ def register_routes(app):
             'speech_synthesis_lang': state.speech_synthesis_lang,
             'max_recording_time': state.max_recording_time
         })
+
+
+    @app.route('/api/openai/endpoints', methods=['GET'])
+    def get_openai_endpoints():
+        return jsonify({
+            'endpoints': state.openai_endpoints,
+            'current_endpoint': state.openai_current_endpoint,
+            'current_model': state.openai_current_model
+        })
+
+
+    @app.route('/api/openai/endpoints', methods=['POST'])
+    def add_openai_endpoint():
+        data = request.json
+        name = data.get('name', '').strip()
+        base_url = data.get('base_url', '').strip()
+        api_key = data.get('api_key', '').strip()
+        models = data.get('models', [])
+
+        if not name:
+            return jsonify({'success': False, 'error': '端点名称不能为空'}), 400
+        if not base_url:
+            return jsonify({'success': False, 'error': 'API 地址不能为空'}), 400
+
+        for ep in state.openai_endpoints:
+            if ep.get('name') == name:
+                return jsonify({'success': False, 'error': '端点名称已存在'}), 400
+
+        endpoint = {
+            'name': name,
+            'base_url': base_url,
+            'api_key': api_key,
+            'models': models
+        }
+        state.openai_endpoints.append(endpoint)
+
+        config = load_config()
+        config['openai_endpoints'] = state.openai_endpoints
+        save_config(config)
+
+        return jsonify({'success': True, 'endpoint': endpoint})
+
+
+    @app.route('/api/openai/endpoints/<endpoint_name>', methods=['PUT'])
+    def update_openai_endpoint(endpoint_name):
+        data = request.json
+
+        for i, ep in enumerate(state.openai_endpoints):
+            if ep.get('name') == endpoint_name:
+                if 'base_url' in data:
+                    ep['base_url'] = data['base_url'].strip()
+                if 'api_key' in data:
+                    ep['api_key'] = data['api_key'].strip()
+                if 'models' in data:
+                    ep['models'] = data['models']
+                if 'name' in data and data['name'] != endpoint_name:
+                    new_name = data['name'].strip()
+                    for other_ep in state.openai_endpoints:
+                        if other_ep.get('name') == new_name and other_ep.get('name') != endpoint_name:
+                            return jsonify({'success': False, 'error': '新名称已存在'}), 400
+                    ep['name'] = new_name
+                    if state.openai_current_endpoint == endpoint_name:
+                        state.openai_current_endpoint = new_name
+
+                config = load_config()
+                config['openai_endpoints'] = state.openai_endpoints
+                config['openai_current_endpoint'] = state.openai_current_endpoint
+                save_config(config)
+
+                return jsonify({'success': True, 'endpoint': ep})
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/openai/endpoints/<endpoint_name>', methods=['DELETE'])
+    def delete_openai_endpoint(endpoint_name):
+        for i, ep in enumerate(state.openai_endpoints):
+            if ep.get('name') == endpoint_name:
+                state.openai_endpoints.pop(i)
+                if state.openai_current_endpoint == endpoint_name:
+                    state.openai_current_endpoint = state.openai_endpoints[0]['name'] if state.openai_endpoints else ''
+
+                config = load_config()
+                config['openai_endpoints'] = state.openai_endpoints
+                config['openai_current_endpoint'] = state.openai_current_endpoint
+                save_config(config)
+
+                return jsonify({'success': True})
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/openai/switch', methods=['POST'])
+    def switch_openai_endpoint():
+        data = request.json
+        endpoint_name = data.get('endpoint_name')
+        model = data.get('model')
+
+        for ep in state.openai_endpoints:
+            if ep.get('name') == endpoint_name:
+                state.openai_current_endpoint = endpoint_name
+                if model:
+                    state.openai_current_model = model
+
+                config = load_config()
+                config['openai_current_endpoint'] = state.openai_current_endpoint
+                config['openai_current_model'] = state.openai_current_model
+                save_config(config)
+
+                return jsonify({
+                    'success': True,
+                    'endpoint': ep,
+                    'current_model': state.openai_current_model
+                })
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/anthropic/endpoints', methods=['GET'])
+    def get_anthropic_endpoints():
+        return jsonify({
+            'endpoints': state.anthropic_endpoints,
+            'current_endpoint': state.anthropic_current_endpoint,
+            'current_model': state.anthropic_current_model
+        })
+
+
+    @app.route('/api/anthropic/endpoints', methods=['POST'])
+    def add_anthropic_endpoint():
+        data = request.json
+        name = data.get('name', '').strip()
+        base_url = data.get('base_url', '').strip()
+        api_key = data.get('api_key', '').strip()
+        models = data.get('models', [])
+
+        if not name:
+            return jsonify({'success': False, 'error': '端点名称不能为空'}), 400
+        if not base_url:
+            return jsonify({'success': False, 'error': 'API 地址不能为空'}), 400
+
+        for ep in state.anthropic_endpoints:
+            if ep.get('name') == name:
+                return jsonify({'success': False, 'error': '端点名称已存在'}), 400
+
+        endpoint = {
+            'name': name,
+            'base_url': base_url,
+            'api_key': api_key,
+            'models': models
+        }
+        state.anthropic_endpoints.append(endpoint)
+
+        config = load_config()
+        config['anthropic_endpoints'] = state.anthropic_endpoints
+        save_config(config)
+
+        return jsonify({'success': True, 'endpoint': endpoint})
+
+
+    @app.route('/api/anthropic/endpoints/<endpoint_name>', methods=['PUT'])
+    def update_anthropic_endpoint(endpoint_name):
+        data = request.json
+
+        for i, ep in enumerate(state.anthropic_endpoints):
+            if ep.get('name') == endpoint_name:
+                if 'base_url' in data:
+                    ep['base_url'] = data['base_url'].strip()
+                if 'api_key' in data:
+                    ep['api_key'] = data['api_key'].strip()
+                if 'models' in data:
+                    ep['models'] = data['models']
+                if 'name' in data and data['name'] != endpoint_name:
+                    new_name = data['name'].strip()
+                    for other_ep in state.anthropic_endpoints:
+                        if other_ep.get('name') == new_name and other_ep.get('name') != endpoint_name:
+                            return jsonify({'success': False, 'error': '新名称已存在'}), 400
+                    ep['name'] = new_name
+                    if state.anthropic_current_endpoint == endpoint_name:
+                        state.anthropic_current_endpoint = new_name
+
+                config = load_config()
+                config['anthropic_endpoints'] = state.anthropic_endpoints
+                config['anthropic_current_endpoint'] = state.anthropic_current_endpoint
+                save_config(config)
+
+                return jsonify({'success': True, 'endpoint': ep})
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/anthropic/endpoints/<endpoint_name>', methods=['DELETE'])
+    def delete_anthropic_endpoint(endpoint_name):
+        for i, ep in enumerate(state.anthropic_endpoints):
+            if ep.get('name') == endpoint_name:
+                state.anthropic_endpoints.pop(i)
+                if state.anthropic_current_endpoint == endpoint_name:
+                    state.anthropic_current_endpoint = state.anthropic_endpoints[0]['name'] if state.anthropic_endpoints else ''
+
+                config = load_config()
+                config['anthropic_endpoints'] = state.anthropic_endpoints
+                config['anthropic_current_endpoint'] = state.anthropic_current_endpoint
+                save_config(config)
+
+                return jsonify({'success': True})
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/anthropic/switch', methods=['POST'])
+    def switch_anthropic_endpoint():
+        data = request.json
+        endpoint_name = data.get('endpoint_name')
+        model = data.get('model')
+
+        for ep in state.anthropic_endpoints:
+            if ep.get('name') == endpoint_name:
+                state.anthropic_current_endpoint = endpoint_name
+                if model:
+                    state.anthropic_current_model = model
+
+                config = load_config()
+                config['anthropic_current_endpoint'] = state.anthropic_current_endpoint
+                config['anthropic_current_model'] = state.anthropic_current_model
+                save_config(config)
+
+                return jsonify({
+                    'success': True,
+                    'endpoint': ep,
+                    'current_model': state.anthropic_current_model
+                })
+
+        return jsonify({'success': False, 'error': '端点不存在'}), 404

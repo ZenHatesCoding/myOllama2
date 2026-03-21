@@ -110,17 +110,17 @@ def node_detect_tool(state: GraphState) -> dict:
     elif provider == "openai":
         llm = create_llm(
             provider="openai",
-            model=state.openai_model if hasattr(state, 'openai_model') else model_name,
-            base_url=state.openai_base_url if hasattr(state, 'openai_base_url') else None,
-            api_key=state.openai_api_key if hasattr(state, 'openai_api_key') else None,
+            model=state.openai_current_model if hasattr(state, 'openai_current_model') and state.openai_current_model else model_name,
+            base_url=state.get_openai_base_url() if hasattr(state, 'get_openai_base_url') else None,
+            api_key=state.get_openai_api_key() if hasattr(state, 'get_openai_api_key') else None,
             temperature=0.3
         )
     elif provider == "anthropic":
         llm = create_llm(
             provider="anthropic",
-            model=state.anthropic_model if hasattr(state, 'anthropic_model') else model_name,
-            base_url=state.anthropic_base_url if hasattr(state, 'anthropic_base_url') else None,
-            api_key=state.anthropic_api_key if hasattr(state, 'anthropic_api_key') else None,
+            model=state.anthropic_current_model if hasattr(state, 'anthropic_current_model') and state.anthropic_current_model else model_name,
+            base_url=state.get_anthropic_base_url() if hasattr(state, 'get_anthropic_base_url') else None,
+            api_key=state.get_anthropic_api_key() if hasattr(state, 'get_anthropic_api_key') else None,
             temperature=0.3
         )
     else:
@@ -239,17 +239,17 @@ def node_retrieve_history(state: GraphState) -> dict:
         if provider == "openai":
             llm = create_llm(
                 provider="openai",
-                model=app_state.openai_model if hasattr(app_state, 'openai_model') else "gpt-4",
-                base_url=app_state.openai_base_url if hasattr(app_state, 'openai_base_url') else None,
-                api_key=app_state.openai_api_key if hasattr(app_state, 'openai_api_key') else None,
+                model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else "gpt-4",
+                base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+                api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
                 temperature=0.3
             )
         elif provider == "anthropic":
             llm = create_llm(
                 provider="anthropic",
-                model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else "claude-3-sonnet-20240229",
-                base_url=app_state.anthropic_base_url if hasattr(app_state, 'anthropic_base_url') else None,
-                api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
+                model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else "claude-3-sonnet-20240229",
+                base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+                api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
                 temperature=0.3
             )
     
@@ -305,17 +305,17 @@ def node_generate(state: GraphState) -> dict:
     elif provider == "openai":
         llm = create_llm(
             provider="openai",
-            model=app_state.openai_model if hasattr(app_state, 'openai_model') else model_name,
-            base_url=app_state.openai_base_url if hasattr(app_state, 'openai_base_url') else None,
-            api_key=app_state.openai_api_key if hasattr(app_state, 'openai_api_key') else None,
+            model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
+            base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+            api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
             temperature=0.7
         )
     elif provider == "anthropic":
         llm = create_llm(
             provider="anthropic",
-            model=app_state.anthropic_model if hasattr(app_state, 'anthropic_model') else model_name,
-            base_url=app_state.anthropic_base_url if hasattr(app_state, 'anthropic_base_url') else None,
-            api_key=app_state.anthropic_api_key if hasattr(app_state, 'anthropic_api_key') else None,
+            model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
+            base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+            api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
             temperature=0.7
         )
     else:

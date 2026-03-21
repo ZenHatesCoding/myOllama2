@@ -112,28 +112,72 @@
                 <input type="text" id="ollamaBaseUrl" value="http://localhost:11434">
             </div>
             <div class="form-group api-config" id="openaiGroup" style="display: none;">
-                <label>OpenAI API 地址</label>
-                <input type="text" id="openaiBaseUrl" placeholder="https://your-server.com/v1">
+                <label>OpenAI 端点</label>
+                <div class="endpoint-selector">
+                    <select id="openaiEndpointSelect" onchange="onOpenaiEndpointChange()">
+                        <option value="">-- 选择或添加端点 --</option>
+                    </select>
+                    <button type="button" class="add-endpoint-btn" onclick="showAddOpenaiEndpointForm()">+ 添加</button>
+                </div>
             </div>
-            <div class="form-group api-config" id="openaiModelGroup" style="display: none;">
-                <label>OpenAI Model</label>
-                <input type="text" id="openaiModel" placeholder="your-model-name">
-            </div>
-            <div class="form-group api-config" id="openaiKeyGroup" style="display: none;">
-                <label>OpenAI API Key (可选)</label>
-                <input type="password" id="openaiApiKey" placeholder="sk-...">
+            <div class="form-group api-config endpoint-form" id="openaiEndpointForm" style="display: none;">
+                <div class="endpoint-form-inner">
+                    <div class="form-group">
+                        <label>端点名称</label>
+                        <input type="text" id="openaiEndpointName" placeholder="例如：我的服务器">
+                    </div>
+                    <div class="form-group">
+                        <label>API 地址</label>
+                        <input type="text" id="openaiEndpointUrl" placeholder="https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="openaiEndpointKey" placeholder="sk-...">
+                    </div>
+                    <div class="form-group">
+                        <label>模型列表（用逗号分隔）</label>
+                        <textarea id="openaiEndpointModels" rows="2" placeholder="gpt-4, gpt-3.5-turbo"></textarea>
+                    </div>
+                    <div class="endpoint-form-actions">
+                        <button type="button" class="cancel-btn" onclick="hideOpenaiEndpointForm()">取消</button>
+                        <button type="button" class="save-btn" onclick="saveOpenaiEndpoint()">保存端点</button>
+                        <button type="button" class="delete-btn" id="deleteOpenaiEndpointBtn" onclick="deleteOpenaiEndpoint()" style="display: none;">删除</button>
+                    </div>
+                </div>
             </div>
             <div class="form-group api-config" id="anthropicGroup" style="display: none;">
-                <label>Anthropic API 地址</label>
-                <input type="text" id="anthropicBaseUrl" placeholder="https://your-server.com">
+                <label>Anthropic 端点</label>
+                <div class="endpoint-selector">
+                    <select id="anthropicEndpointSelect" onchange="onAnthropicEndpointChange()">
+                        <option value="">-- 选择或添加端点 --</option>
+                    </select>
+                    <button type="button" class="add-endpoint-btn" onclick="showAddEndpointForm()">+ 添加</button>
+                </div>
             </div>
-            <div class="form-group api-config" id="anthropicModelGroup" style="display: none;">
-                <label>Anthropic Model</label>
-                <input type="text" id="anthropicModel" placeholder="your-model-name">
-            </div>
-            <div class="form-group api-config" id="anthropicKeyGroup" style="display: none;">
-                <label>Anthropic API Key (可选)</label>
-                <input type="password" id="anthropicApiKey" placeholder="sk-ant-...">
+            <div class="form-group api-config endpoint-form" id="anthropicEndpointForm" style="display: none;">
+                <div class="endpoint-form-inner">
+                    <div class="form-group">
+                        <label>端点名称</label>
+                        <input type="text" id="anthropicEndpointName" placeholder="例如：我的服务器">
+                    </div>
+                    <div class="form-group">
+                        <label>API 地址</label>
+                        <input type="text" id="anthropicEndpointUrl" placeholder="https://api.minimaxi.com/anthropic">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="anthropicEndpointKey" placeholder="sk-ant-...">
+                    </div>
+                    <div class="form-group">
+                        <label>模型列表（用逗号分隔）</label>
+                        <textarea id="anthropicEndpointModels" rows="2" placeholder="MiniMax-M2.7, MiniMax-M2.5"></textarea>
+                    </div>
+                    <div class="endpoint-form-actions">
+                        <button type="button" class="cancel-btn" onclick="hideEndpointForm()">取消</button>
+                        <button type="button" class="save-btn" onclick="saveAnthropicEndpoint()">保存端点</button>
+                        <button type="button" class="delete-btn" id="deleteEndpointBtn" onclick="deleteAnthropicEndpoint()" style="display: none;">删除</button>
+                    </div>
+                </div>
             </div>
             <div class="form-group">
                 <label>上下文轮数</label>

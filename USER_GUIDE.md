@@ -46,8 +46,23 @@ python app.py
 首次打开应用时，需要先配置 API Key。点击右下角的 ⚙️ 设置按钮：
 
 1. 选择 API 模式（OpenAI 或 Anthropic）
-2. 填写 API 地址和 Key
+2. 填写相应配置信息
 3. 点击保存
+
+### Anthropic 兼容模式配置
+
+Anthropic 模式支持多端点配置，可以管理多个 API 服务器和模型：
+
+1. 选择 **Anthropic 兼容 API** 模式
+2. 点击 **+ 添加** 按钮添加新端点
+3. 填写端点信息：
+   - **端点名称**：例如 "我的 Minimax 服务器"
+   - **API 地址**：例如 `https://api.minimaxi.com/anthropic`
+   - **API Key**：你的 API 密钥
+   - **模型列表**：用逗号分隔，例如 `MiniMax-M2.7, MiniMax-M2.5`
+4. 点击 **保存端点**
+5. 从下拉菜单选择要使用的端点和模型
+6. 在主界面选择对应的模型即可开始对话
 
 ### 常用 API 配置示例
 
@@ -64,7 +79,20 @@ python app.py
 - **地址**：`https://api.minimaxi.com/openai/v1`
 - **模型**：例如 `MiniMax-M2.7`
 
-配置完成后即可开始使用。
+### OpenAI 兼容模式配置
+
+OpenAI 模式同样支持多端点配置，可以管理多个 API 服务器和模型：
+
+1. 选择 **OpenAI 兼容 API** 模式
+2. 点击 **+ 添加** 按钮添加新端点
+3. 填写端点信息：
+   - **端点名称**：例如 "我的 OpenAI 服务器"
+   - **API 地址**：例如 `https://api.openai.com/v1`
+   - **API Key**：你的 API 密钥
+   - **模型列表**：用逗号分隔，例如 `gpt-4, gpt-3.5-turbo`
+4. 点击 **保存端点**
+5. 从下拉菜单选择要使用的端点和模型
+6. 在主界面选择对应的模型即可开始对话
 
 ---
 
