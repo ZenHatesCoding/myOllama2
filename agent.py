@@ -14,6 +14,72 @@ from llm_factory import create_llm
 from skill_registry import skill_registry
 
 
+def build_skills_schema() -> str:
+    skills = skill_registry.get_all_skills()
+    if not skills:
+        return "无可用的 Skill"
+    schema = "可用 Skill 列表：\n\n"
+    for skill in skills:
+        schema += f"Skill 名称: {skill.name}\n"
+        schema += f"描述: {skill.description}\n\n"
+    return schema
+
+
+def detect_skill_intent(llm, query: str, skills_schema: str) -> Optional[Dict[str, Any]]:
+    system_prompt = f"""你是一个智能助手，负责判断用户是否需要使用某个 Skill 来完成任务。
+
+{skills_schema}
+
+请分析用户的输入，判断用户意图：
+1. 如果用户要求执行某个 Skill（如"帮我审查代码"、"用 pdf-to-org 读 PDF"），返回：
+{{
+    "need_skill": true,
+    "skill_name": "Skill名称"
+}}
+
+2. 如果用户只是询问有哪些 Skill 可用（如"你有什么 skill"、"列出所有 skill"），返回：
+{{
+    "list_skills": true
+}}
+
+3. 如果用户只是在正常聊天，不需要使用任何 Skill，返回：
+{{
+    "need_skill": false
+}}
+
+只返回JSON，不要有其他内容。"""
+
+    try:
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=query)
+        ])
+
+        content = response.content
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    text_parts.append(part.get('text', ''))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            result_text = ''.join(text_parts)
+        else:
+            result_text = str(content)
+
+        result_text = result_text.strip()
+        result_text = result_text.replace('```json', '').replace('```', '').strip()
+
+        try:
+            result = json.loads(result_text)
+            return result
+        except json.JSONDecodeError:
+            return None
+    except Exception as e:
+        print(f"检测 Skill 意图失败: {str(e)}")
+        return None
+
+
 def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str, Any]]:
     system_prompt = f"""你是一个智能助手，负责判断用户是否需要使用工具来完成任务。
 
@@ -86,7 +152,7 @@ def build_tools_schema() -> str:
     return schema
 
 
-def node_detect_tool(state: GraphState) -> dict:
+def node_classify_intent(state: GraphState) -> dict:
     from graph import decide_disclosure_level, DISCLOSURE_LEVELS
     
     if state.get("should_stop"):
@@ -164,7 +230,7 @@ def node_detect_tool(state: GraphState) -> dict:
     return {"mcp_result": None, "disclosure_level": disclosure_level}
 
 
-def node_retrieve_document(state: GraphState) -> dict:
+def node_retrieve_docs(state: GraphState) -> dict:
     from graph import DISCLOSURE_LEVELS
     from retriever import create_retriever
     
@@ -259,7 +325,7 @@ def node_retrieve_history(state: GraphState) -> dict:
     return {"history_context": history_context or ""}
 
 
-def node_generate(state: GraphState) -> dict:
+def node_generate_response(state: GraphState) -> dict:
     if state.get("should_stop"):
         return {"output_content": "操作已中断"}
     
@@ -330,11 +396,9 @@ def node_generate(state: GraphState) -> dict:
         )
     
     conversation = app_state.get_current_conversation()
-    skills_info = skill_registry.get_trigger_info()
-    skill_instruction = f"\n\n【可用 Skill 列表】\n{skills_info}\n\n当用户请求与某 Skill 描述相符时，请告知用户该 Skill 已加载并可使用。" if skills_info else ""
-    
+
     if skill_context:
-        system_prompt = f"""{skill_context}{skill_instruction}
+        system_prompt = f"""{skill_context}
 
 请根据上述 Skill 指导完成任务，完成后向用户报告结果。
 
@@ -346,10 +410,10 @@ def node_generate(state: GraphState) -> dict:
         if history_context:
             context_parts.append(f"【历史对话上下文】\n{history_context}")
         context_str = "\n\n".join(context_parts) if context_parts else ""
-        
+
         system_prompt = f"""你是一个专业、友好的AI助手。
 请根据以下信息回答用户的问题。
-{context_str}{skill_instruction}
+{context_str}
 
 【回答要求】
 1. 用户用什么语言提问，你就用什么语言回答
@@ -385,41 +449,96 @@ def node_generate(state: GraphState) -> dict:
 def should_use_tool(state: GraphState) -> str:
     target_skill = state.get("target_skill")
     mcp_result = state.get("mcp_result")
-    
+
     if target_skill:
-        return "load_skill"
+        return "activate_skill"
     elif mcp_result and mcp_result.get("success"):
-        return "generate"
-    return "detect_skill"
+        return "generate_response"
+    return "match_skill"
 
 
 def should_use_skill(state: GraphState) -> str:
     target_skill = state.get("target_skill")
+    skill_context = state.get("skill_context")
     if target_skill:
-        return "load_skill"
-    return "retrieve_document"
+        return "activate_skill"
+    if skill_context:
+        return "generate_response"
+    return "retrieve_docs"
 
 
-def node_detect_skill(state: GraphState) -> dict:
+def node_match_skill(state: GraphState) -> dict:
     if state.get("should_stop"):
         return {}
-    
+
     query = state.get("query", "")
     if not query:
         return {"target_skill": None}
-    
+
     skills = skill_registry.get_all_skills()
+    if not skills:
+        return {"target_skill": None}
+
+    from extensions import state as app_state
+    provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
+    model_name = state.get("model_name", "qwen3.5:9b")
+
+    if provider == "ollama":
+        llm = ChatOllama(
+            model=model_name,
+            base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
+            temperature=0.3
+        )
+    elif provider == "openai":
+        llm = create_llm(
+            provider="openai",
+            model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
+            base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+            api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
+            temperature=0.3
+        )
+    elif provider == "anthropic":
+        llm = create_llm(
+            provider="anthropic",
+            model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
+            base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+            api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
+            temperature=0.3
+        )
+    else:
+        llm = ChatOllama(
+            model=model_name,
+            base_url="http://localhost:11434",
+            temperature=0.3
+        )
+
+    skills_schema = build_skills_schema()
+    intent = detect_skill_intent(llm, query, skills_schema)
+
     query_lower = query.lower()
-    
-    for skill in skills:
-        desc_lower = skill.description.lower()
-        if any(keyword in query_lower for keyword in desc_lower.split()[:5]):
-            return {"target_skill": skill.name}
-    
+    list_keywords = ["什么skill", "什么技能", "有哪些skill", "有哪些技能", "列出", "list", "skill列表", "技能列表"]
+    is_list_query = any(kw in query_lower for kw in list_keywords)
+
+    if intent and intent.get("need_skill"):
+        skill_name = intent.get("skill_name")
+        return {"target_skill": skill_name}
+
+    if intent and intent.get("list_skills"):
+        skills = skill_registry.get_all_skills()
+        skill_list_text = "\n".join([f"- **{skill.name}**: {skill.description}" for skill in skills])
+        skill_context = f"【可用 Skill 列表】\n\n{skill_list_text}\n\n请向用户介绍这些 Skill。"
+        return {"target_skill": None, "skill_context": skill_context}
+
+    if is_list_query and not intent:
+        skills = skill_registry.get_all_skills()
+        skill_list_text = "\n".join([f"- **{skill.name}**: {skill.description}" for skill in skills])
+        skill_context = f"【可用 Skill 列表】\n\n{skill_list_text}\n\n请向用户介绍这些 Skill。"
+        return {"target_skill": None, "skill_context": skill_context}
+
     return {"target_skill": None}
 
 
-def node_load_skill(state: GraphState) -> dict:
+def node_activate_skill(state: GraphState) -> dict:
     if state.get("should_stop"):
         return {}
     
@@ -439,39 +558,40 @@ def node_load_skill(state: GraphState) -> dict:
 
 def build_graph():
     graph = StateGraph(GraphState)
-    
-    graph.add_node("detect_tool", node_detect_tool)
-    graph.add_node("detect_skill", node_detect_skill)
-    graph.add_node("load_skill", node_load_skill)
-    graph.add_node("retrieve_document", node_retrieve_document)
+
+    graph.add_node("classify_intent", node_classify_intent)
+    graph.add_node("match_skill", node_match_skill)
+    graph.add_node("activate_skill", node_activate_skill)
+    graph.add_node("retrieve_docs", node_retrieve_docs)
     graph.add_node("retrieve_history", node_retrieve_history)
-    graph.add_node("generate", node_generate)
-    
-    graph.set_entry_point("detect_tool")
-    
+    graph.add_node("generate_response", node_generate_response)
+
+    graph.set_entry_point("classify_intent")
+
     graph.add_conditional_edges(
-        "detect_tool",
+        "classify_intent",
         should_use_tool,
         {
-            "load_skill": "load_skill",
-            "generate": "generate",
-            "detect_skill": "detect_skill"
+            "activate_skill": "activate_skill",
+            "generate_response": "generate_response",
+            "match_skill": "match_skill"
         }
     )
-    
+
     graph.add_conditional_edges(
-        "detect_skill",
+        "match_skill",
         should_use_skill,
         {
-            "load_skill": "load_skill",
-            "retrieve_document": "retrieve_document"
+            "activate_skill": "activate_skill",
+            "retrieve_docs": "retrieve_docs",
+            "generate_response": "generate_response"
         }
     )
-    
-    graph.add_edge("load_skill", "generate")
-    graph.add_edge("retrieve_document", "retrieve_history")
-    graph.add_edge("retrieve_history", "generate")
-    graph.add_edge("generate", END)
+
+    graph.add_edge("activate_skill", "generate_response")
+    graph.add_edge("retrieve_docs", "retrieve_history")
+    graph.add_edge("retrieve_history", "generate_response")
+    graph.add_edge("generate_response", END)
     
     return graph.compile(checkpointer=MemorySaver())
 
@@ -523,6 +643,6 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
                     tool_display_name = tool_display_names.get(tool_name, tool_name)
                     yield f"📰 正在从{tool_display_name}获取信息...\n\n"
             
-            elif node_name == "generate":
+            elif node_name == "generate_response":
                 output = node_output.get("output_content", "")
                 yield output
