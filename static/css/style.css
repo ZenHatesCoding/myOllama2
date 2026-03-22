@@ -694,6 +694,89 @@ body {
     background: #5568d3;
 }
 
+.endpoint-selector {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.endpoint-selector select {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1em;
+}
+
+.add-endpoint-btn {
+    padding: 10px 15px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.add-endpoint-btn:hover {
+    background: #5568d3;
+}
+
+.endpoint-form {
+    margin-top: 10px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.endpoint-form-inner .form-group {
+    margin-bottom: 12px;
+}
+
+.endpoint-form-inner label {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.endpoint-form textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1em;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.endpoint-form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 15px;
+}
+
+.endpoint-form-actions .cancel-btn {
+    background: #ccc;
+    color: #333;
+}
+
+.endpoint-form-actions .save-btn {
+    background: #667eea;
+    color: white;
+}
+
+.endpoint-form-actions .delete-btn {
+    background: #dc3545;
+    color: white;
+    margin-right: auto;
+}
+
+.endpoint-form-actions .delete-btn:hover {
+    background: #c82333;
+}
+
 .hidden {
     display: none;
 }

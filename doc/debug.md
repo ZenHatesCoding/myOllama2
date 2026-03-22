@@ -74,6 +74,188 @@ loadMessages(currentConversationId);
 
 ---
 
+## 问题 4：Minimax API Anthropic 兼容模式接入
+
+### 问题描述
+使用 Minimax 官网 API 选择 Anthropic 兼容模式接入时，问答显示"生成失败"，返回 HTML 404 错误。
+
+### 问题分析
+
+#### 错误信息
+```
+检测工具意图失败: model 'MiniMax-M2.7' not found (status code: 404)
+生成回答失败: <html>
+<head><title>404 Not Found</title></head>
+<body><center><h1>404 Not Found</h1></center><hr><center>nginx</center>
+</body>
+</html>
+```
+
+#### 根本原因
+1. **API 地址格式错误**：用户填写的是 `https://api.minimaxi.com/anthropic/v1`，但 Minimax 的正确 endpoint 是 `/anthropic/messages`
+2. **base_url 未传递**：`llm_factory.py` 的 `ChatAnthropic` 创建时没有传递 `base_url` 参数
+3. **路径重复**：`langchain_anthropic` 的 `ChatAnthropic` 会自动在 base_url 后加 `/v1/messages`，如果 base_url 已经包含完整路径会导致重复
+
+#### 问题 1：base_url 未传递
+**文件**: `llm_factory.py`
+```python
+# 修改前
+elif provider == LLMProvider.ANTHROPIC:
+    return ChatAnthropic(
+        model=model,
+        anthropic_api_key=api_key,
+        temperature=temperature,
+        **kwargs
+    )
+
+# 修改后
+elif provider == LLMProvider.ANTHROPIC:
+    return ChatAnthropic(
+        model=model,
+        base_url=base_url,
+        anthropic_api_key=api_key,
+        temperature=temperature,
+        **kwargs
+    )
+```
+
+#### 问题 2：agent.py 中调用时未传递 base_url
+**文件**: `agent.py` (3处)
+- 第 110 行：`state.anthropic_base_url`
+- 第 239 行：`app_state.anthropic_base_url`
+- 第 305 行：`app_state.anthropic_base_url`
+
+#### 问题 3：API 地址格式
+- ❌ 错误：`https://api.minimaxi.com/anthropic/v1`（多了 `/v1`）
+- ✅ 正确：`https://api.minimaxi.com/anthropic`
+
+> 注：`langchain_anthropic` 的 `ChatAnthropic` 会自动在 base_url 后加 `/v1/messages`，所以 base_url 只需写到 `/anthropic` 即可
+
+#### 问题 4：routes.py 生成摘要时模型名硬编码
+`routes.py` 中生成摘要时，模型名被硬编码为 `qwen3.5:9b`，忽略当前配置的 provider 和模型名。
+
+#### 问题 5：node_detect_tool 中 provider 判断错误
+`node_detect_tool` 函数从 `GraphState`（字典）获取 `llm_provider`，但 `GraphState` 没有这个字段，导致总是默认为 `'ollama'`。
+
+### 修复方案
+
+1. **llm_factory.py**：添加 `base_url=base_url` 参数
+2. **agent.py**：3处调用都添加 `base_url` 参数；`node_detect_tool` 改用 `app_state` 获取 provider 和配置
+3. **routes.py**：生成摘要时根据 provider 选择对应模型
+4. **用户配置**：API 地址应填写 `https://api.minimaxi.com/anthropic`
+
+### 修改的文件
+
+- `llm_factory.py`: ChatAnthropic 添加 base_url 参数
+- `agent.py`: 3处 create_llm 调用添加 base_url 参数；`node_detect_tool` 改用 `app_state`
+- `utils.py`: get_llm_model 函数 anthropic 分支添加 base_url 参数
+- `routes.py`: 生成摘要时根据 provider 选择对应模型
+
+### 修复后状态
+- ✅ Anthropic 兼容模式可正常接收 base_url
+- ✅ Minimax API 可正常访问
+- ✅ 上传文档生成摘要使用正确的模型
+- ✅ 检测工具意图使用正确的 provider 和模型
+
+### 修复时间
+2026-03-21
+
+---
+
+## 问题 5：Minimax 模型返回格式处理
+
+### 问题描述
+Minimax 模型返回的 `content` 是一个列表，包含 `thinking` 和 `text` 两种类型的 block，原代码直接处理导致：
+- 问答时 thinking 内容被显示出来
+- 生成摘要时报 `'list' object has no attribute 'strip'` 错误
+- 检测工具意图时报 `'list' object has no attribute 'strip'` 错误
+
+```
+🤖 [{'thinking': 'The user', 'type': 'thinking', 'index': 0}][{'thinking': ' sent "testtesttest"...'}]你好！这看起来像是一个测试消息。有什么我可以帮助你的吗？ 😊
+```
+
+### 问题分析
+```python
+chunk.content = [
+    {'thinking': '...', 'type': 'thinking', 'index': 0},
+    {'thinking': '...', 'type': 'thinking', 'index': 1},
+    {'text': '你好！这看起来像是一个测试消息。', 'type': 'text', 'index': 2}
+]
+```
+
+需要过滤掉 `thinking` 类型的 block，只保留 `text` 类型。
+
+### 修复方案
+
+#### agent.py - node_generate
+```python
+# 修改前
+chunk_text = str(chunk.content)
+
+# 修改后
+if hasattr(chunk, 'content') and isinstance(chunk.content, list):
+    text_parts = []
+    for part in chunk.content:
+        if isinstance(part, dict) and part.get('type') == 'text':
+            text_parts.append(part.get('text', ''))
+        elif isinstance(part, str):
+            text_parts.append(part)
+    chunk_text = ''.join(text_parts)
+else:
+    chunk_text = str(chunk.content)
+```
+
+#### utils.py - generate_summary
+```python
+# 修改前
+return response.content.strip()
+
+# 修改后
+content = response.content
+if isinstance(content, list):
+    text_parts = []
+    for part in content:
+        if isinstance(part, dict) and part.get('type') == 'text':
+            text_parts.append(part.get('text', ''))
+        elif isinstance(part, str):
+            text_parts.append(part)
+    content = ''.join(text_parts)
+return content.strip()
+```
+
+#### agent.py - detect_tool_intent
+```python
+# 修改前
+result_text = response.content.strip()
+
+# 修改后
+content = response.content
+if isinstance(content, list):
+    text_parts = []
+    for part in content:
+        if isinstance(part, dict) and part.get('type') == 'text':
+            text_parts.append(part.get('text', ''))
+        elif isinstance(part, str):
+            text_parts.append(part)
+    result_text = ''.join(text_parts)
+else:
+    result_text = str(content)
+result_text = result_text.strip()
+```
+
+### 修改的文件
+- `agent.py`: `node_generate` 函数处理 LLM stream 响应；`detect_tool_intent` 函数处理 response.content 列表
+- `utils.py`: `generate_summary` 函数处理 response.content 列表
+
+### 修复后状态
+- ✅ thinking 内容不再显示
+- ✅ 只显示正常的文本回答
+
+### 修复时间
+2026-03-21
+
+---
+
 ## Token 限制问题汇总
 
 ### 问题 1：历史对话索引构建失败

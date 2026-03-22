@@ -39,16 +39,17 @@ def get_llm_model(temperature=0.7):
     elif provider == "openai":
         return create_llm(
             provider="openai",
-            model=state.openai_model,
-            base_url=state.openai_base_url,
-            api_key=state.openai_api_key or None,
+            model=state.openai_current_model if hasattr(state, 'openai_current_model') and state.openai_current_model else model_name,
+            base_url=state.get_openai_base_url() if hasattr(state, 'get_openai_base_url') else None,
+            api_key=state.get_openai_api_key() if hasattr(state, 'get_openai_api_key') else None,
             temperature=temperature
         )
     elif provider == "anthropic":
         return create_llm(
             provider="anthropic",
-            model=state.anthropic_model,
-            api_key=state.anthropic_api_key or None,
+            model=state.anthropic_current_model if hasattr(state, 'anthropic_current_model') and state.anthropic_current_model else "claude-3-sonnet-20240229",
+            base_url=state.get_anthropic_base_url() if hasattr(state, 'get_anthropic_base_url') else None,
+            api_key=state.get_anthropic_api_key() if hasattr(state, 'get_anthropic_api_key') else None,
             temperature=temperature
         )
     else:
@@ -110,7 +111,18 @@ def generate_summary(messages):
         
         llm = get_llm_model(temperature=0.3)
         response = llm.invoke(prompt)
-        return response.content.strip()
+        
+        content = response.content
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    text_parts.append(part.get('text', ''))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content = ''.join(text_parts)
+        
+        return content.strip()
     except Exception as e:
         print(f"生成摘要失败：{str(e)}")
         return None
@@ -250,6 +262,13 @@ async def generate_answer(query, model_name=None):
 
 def auto_name_conversation(conversation):
     if conversation.messages:
+        user_assistant_pairs = 0
+        for i in range(0, len(conversation.messages) - 1, 2):
+            if (conversation.messages[i].role == "user" and
+                i + 1 < len(conversation.messages) and
+                conversation.messages[i + 1].role == "assistant"):
+                user_assistant_pairs += 1
+
         if conversation.name == "新对话":
             for msg in conversation.messages:
                 if msg.role == "user":
@@ -257,8 +276,8 @@ def auto_name_conversation(conversation):
                     conversation.name = name
                     state.persist_conversation_name(name)
                     break
-        
-        if len(conversation.messages) >= 2:
+
+        if user_assistant_pairs > 0 and user_assistant_pairs % 5 == 0:
             summary = generate_summary(conversation.messages)
             if summary:
                 conversation.name = summary[:30] + ("..." if len(summary) > 30 else "")
