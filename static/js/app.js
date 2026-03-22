@@ -1540,7 +1540,7 @@ function takeScreenshot() {
     
     document.getElementById('statusText').textContent = '正在截图...';
     
-    fetch('/api/screenshot', { method: 'POST' })
+    fetch('/api/images/screenshot', { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             document.getElementById('statusText').textContent = '就绪';

@@ -154,41 +154,42 @@ def build_tools_schema() -> str:
 
 
 def node_classify_intent(state: GraphState) -> dict:
+    from extensions import state as app_state
     from graph import decide_disclosure_level, DISCLOSURE_LEVELS
-    
+
     if state.get("should_stop"):
         return {}
-    
+
     query = state.get("query", "")
     if not query:
         return {"mcp_result": None}
-    
+
     disclosure_level = decide_disclosure_level(query)
     level_config = DISCLOSURE_LEVELS.get(disclosure_level, DISCLOSURE_LEVELS["relevant"])
-    
+
     model_name = state.get("model_name", "qwen3.5:9b")
-    provider = state.llm_provider if hasattr(state, 'llm_provider') else 'ollama'
-    
+    provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
+
     if provider == "ollama":
         llm = ChatOllama(
             model=model_name,
-            base_url=state.ollama_base_url if hasattr(state, 'ollama_base_url') else "http://localhost:11434",
+            base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
             temperature=0.3
         )
     elif provider == "openai":
         llm = create_llm(
             provider="openai",
-            model=state.openai_current_model if hasattr(state, 'openai_current_model') and state.openai_current_model else model_name,
-            base_url=state.get_openai_base_url() if hasattr(state, 'get_openai_base_url') else None,
-            api_key=state.get_openai_api_key() if hasattr(state, 'get_openai_api_key') else None,
+            model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
+            base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+            api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
             temperature=0.3
         )
     elif provider == "anthropic":
         llm = create_llm(
             provider="anthropic",
-            model=state.anthropic_current_model if hasattr(state, 'anthropic_current_model') and state.anthropic_current_model else model_name,
-            base_url=state.get_anthropic_base_url() if hasattr(state, 'get_anthropic_base_url') else None,
-            api_key=state.get_anthropic_api_key() if hasattr(state, 'get_anthropic_api_key') else None,
+            model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
+            base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+            api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
             temperature=0.3
         )
     else:
