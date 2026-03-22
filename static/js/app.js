@@ -853,402 +853,28 @@ function loadConfig() {
             currentConfig = data;
             document.getElementById('llmProvider').value = data.llm_provider || 'ollama';
             document.getElementById('ollamaBaseUrl').value = data.ollama_base_url || 'http://localhost:11434';
-
-            loadOpenaiEndpoints(data);
-            loadAnthropicEndpoints(data);
-
+            
+            document.getElementById('openaiBaseUrl').value = data.openai_base_url || '';
+            document.getElementById('openaiModel').value = data.openai_model || '';
+            document.getElementById('openaiApiKey').value = data.openai_api_key || '';
+            
+            document.getElementById('anthropicBaseUrl').value = data.anthropic_base_url || '';
+            document.getElementById('anthropicModel').value = data.anthropic_model || '';
+            document.getElementById('anthropicApiKey').value = data.anthropic_api_key || '';
+            
             document.getElementById('maxContextTurns').value = data.max_context_turns;
             document.getElementById('speechRecognitionLang').value = data.speech_recognition_lang || 'zh-CN';
             document.getElementById('speechSynthesisLang').value = data.speech_synthesis_lang || 'zh-CN';
             document.getElementById('maxRecordingTime').value = data.max_recording_time || 30;
-
+            
             updateSpeechRecognitionLang(data.speech_recognition_lang || 'zh-CN');
             updateSpeechSynthesisLang(data.speech_synthesis_lang || 'zh-CN');
             maxRecordingTime = data.max_recording_time || 30;
-
+            
             onProviderChange();
             updateModelSelectForProvider();
         })
         .catch(error => console.error('加载配置失败:', error));
-}
-
-function loadOpenaiEndpoints(data) {
-    const endpoints = data.openai_endpoints || [];
-    const currentEndpoint = data.openai_current_endpoint || '';
-    const select = document.getElementById('openaiEndpointSelect');
-    const currentModel = data.openai_current_model || '';
-
-    select.innerHTML = '<option value="">-- 选择或添加端点 --</option>';
-
-    endpoints.forEach(ep => {
-        const option = document.createElement('option');
-        option.value = ep.name;
-        option.textContent = ep.name;
-        if (ep.name === currentEndpoint) {
-            option.selected = true;
-        }
-        select.appendChild(option);
-    });
-
-    if (currentEndpoint) {
-        const ep = endpoints.find(e => e.name === currentEndpoint);
-        if (ep) {
-            document.getElementById('openaiEndpointName').value = ep.name;
-            document.getElementById('openaiEndpointUrl').value = ep.base_url || '';
-            document.getElementById('openaiEndpointKey').value = ep.api_key || '';
-            document.getElementById('openaiEndpointModels').value = (ep.models || []).join(', ');
-        }
-    }
-}
-
-function onOpenaiEndpointChange() {
-    const select = document.getElementById('openaiEndpointSelect');
-    const selectedName = select.value;
-
-    hideOpenaiEndpointForm();
-
-    if (!selectedName) {
-        return;
-    }
-
-    const endpoints = currentConfig.openai_endpoints || [];
-    const ep = endpoints.find(e => e.name === selectedName);
-    if (ep) {
-        document.getElementById('openaiEndpointName').value = ep.name;
-        document.getElementById('openaiEndpointUrl').value = ep.base_url || '';
-        document.getElementById('openaiEndpointKey').value = ep.api_key || '';
-        document.getElementById('openaiEndpointModels').value = (ep.models || []).join(', ');
-        showEditOpenaiEndpointForm();
-    }
-}
-
-function showAddOpenaiEndpointForm() {
-    document.getElementById('openaiEndpointForm').style.display = 'block';
-    document.getElementById('openaiEndpointName').value = '';
-    document.getElementById('openaiEndpointUrl').value = '';
-    document.getElementById('openaiEndpointKey').value = '';
-    document.getElementById('openaiEndpointModels').value = '';
-    document.getElementById('deleteOpenaiEndpointBtn').style.display = 'none';
-}
-
-function showEditOpenaiEndpointForm() {
-    document.getElementById('openaiEndpointForm').style.display = 'block';
-    document.getElementById('deleteOpenaiEndpointBtn').style.display = 'inline-block';
-}
-
-function hideOpenaiEndpointForm() {
-    document.getElementById('openaiEndpointForm').style.display = 'none';
-}
-
-function saveOpenaiEndpoint() {
-    const name = document.getElementById('openaiEndpointName').value.trim();
-    const base_url = document.getElementById('openaiEndpointUrl').value.trim();
-    const api_key = document.getElementById('openaiEndpointKey').value.trim();
-    const modelsStr = document.getElementById('openaiEndpointModels').value.trim();
-    const models = modelsStr ? modelsStr.split(',').map(m => m.trim()).filter(m => m) : [];
-
-    if (!name) {
-        alert('请输入端点名称');
-        return;
-    }
-    if (!base_url) {
-        alert('请输入 API 地址');
-        return;
-    }
-
-    const endpoints = currentConfig.openai_endpoints || [];
-    const existingIndex = endpoints.findIndex(e => e.name === name);
-
-    const endpoint = {
-        name: name,
-        base_url: base_url,
-        api_key: api_key,
-        models: models
-    };
-
-    if (existingIndex >= 0) {
-        fetch(`/api/openai/endpoints/${encodeURIComponent(name)}`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(endpoint)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                currentConfig.openai_endpoints[existingIndex] = data.endpoint;
-                loadOpenaiEndpoints(currentConfig);
-                hideOpenaiEndpointForm();
-                updateModelSelectForProvider();
-            } else {
-                alert('更新失败: ' + data.error);
-            }
-        })
-        .catch(error => {
-            console.error('更新端点失败:', error);
-            alert('更新端点失败');
-        });
-    } else {
-        fetch('/api/openai/endpoints', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(endpoint)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                if (!currentConfig.openai_endpoints) {
-                    currentConfig.openai_endpoints = [];
-                }
-                currentConfig.openai_endpoints.push(data.endpoint);
-                currentConfig.openai_current_endpoint = name;
-                if (models.length > 0) {
-                    currentConfig.openai_current_model = models[0];
-                }
-                fetch('/api/openai/switch', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        endpoint_name: name,
-                        model: models.length > 0 ? models[0] : ''
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    loadOpenaiEndpoints(currentConfig);
-                    hideOpenaiEndpointForm();
-                    updateModelSelectForProvider();
-                });
-            } else {
-                alert('添加失败: ' + data.error);
-            }
-        })
-        .catch(error => {
-            console.error('添加端点失败:', error);
-            alert('添加端点失败');
-        });
-    }
-}
-
-function deleteOpenaiEndpoint() {
-    const name = document.getElementById('openaiEndpointName').value.trim();
-    if (!name) {
-        return;
-    }
-    if (!confirm(`确定要删除端点 "${name}" 吗？`)) {
-        return;
-    }
-
-    fetch(`/api/openai/endpoints/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            currentConfig.openai_endpoints = currentConfig.openai_endpoints.filter(e => e.name !== name);
-            loadOpenaiEndpoints(currentConfig);
-            hideOpenaiEndpointForm();
-            updateModelSelectForProvider();
-        } else {
-            alert('删除失败: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('删除端点失败:', error);
-        alert('删除端点失败');
-    });
-}
-
-function loadAnthropicEndpoints(data) {
-    const endpoints = data.anthropic_endpoints || [];
-    const currentEndpoint = data.anthropic_current_endpoint || '';
-    const select = document.getElementById('anthropicEndpointSelect');
-    const currentModel = data.anthropic_current_model || '';
-
-    select.innerHTML = '<option value="">-- 选择或添加端点 --</option>';
-
-    endpoints.forEach(ep => {
-        const option = document.createElement('option');
-        option.value = ep.name;
-        option.textContent = ep.name;
-        if (ep.name === currentEndpoint) {
-            option.selected = true;
-        }
-        select.appendChild(option);
-    });
-
-    if (currentEndpoint) {
-        const ep = endpoints.find(e => e.name === currentEndpoint);
-        if (ep) {
-            document.getElementById('anthropicEndpointName').value = ep.name;
-            document.getElementById('anthropicEndpointUrl').value = ep.base_url || '';
-            document.getElementById('anthropicEndpointKey').value = ep.api_key || '';
-            document.getElementById('anthropicEndpointModels').value = (ep.models || []).join(', ');
-        }
-    }
-}
-
-function onAnthropicEndpointChange() {
-    const select = document.getElementById('anthropicEndpointSelect');
-    const selectedName = select.value;
-
-    hideEndpointForm();
-
-    if (!selectedName) {
-        return;
-    }
-
-    const endpoints = currentConfig.anthropic_endpoints || [];
-    const ep = endpoints.find(e => e.name === selectedName);
-    if (ep) {
-        document.getElementById('anthropicEndpointName').value = ep.name;
-        document.getElementById('anthropicEndpointUrl').value = ep.base_url || '';
-        document.getElementById('anthropicEndpointKey').value = ep.api_key || '';
-        document.getElementById('anthropicEndpointModels').value = (ep.models || []).join(', ');
-        showEditEndpointForm();
-    }
-}
-
-function showAddEndpointForm() {
-    document.getElementById('anthropicEndpointName').value = '';
-    document.getElementById('anthropicEndpointUrl').value = '';
-    document.getElementById('anthropicEndpointKey').value = '';
-    document.getElementById('anthropicEndpointModels').value = '';
-    document.getElementById('deleteEndpointBtn').style.display = 'none';
-    document.getElementById('anthropicEndpointForm').style.display = 'block';
-    document.getElementById('anthropicEndpointName').focus();
-}
-
-function showEditEndpointForm() {
-    document.getElementById('deleteEndpointBtn').style.display = 'inline-block';
-    document.getElementById('anthropicEndpointForm').style.display = 'block';
-}
-
-function hideEndpointForm() {
-    document.getElementById('anthropicEndpointForm').style.display = 'none';
-}
-
-function saveAnthropicEndpoint() {
-    const name = document.getElementById('anthropicEndpointName').value.trim();
-    const base_url = document.getElementById('anthropicEndpointUrl').value.trim();
-    const api_key = document.getElementById('anthropicEndpointKey').value.trim();
-    const modelsStr = document.getElementById('anthropicEndpointModels').value.trim();
-    const models = modelsStr ? modelsStr.split(',').map(m => m.trim()).filter(m => m) : [];
-
-    if (!name) {
-        alert('请输入端点名称');
-        return;
-    }
-    if (!base_url) {
-        alert('请输入API地址');
-        return;
-    }
-
-    const select = document.getElementById('anthropicEndpointSelect');
-    const existingNames = Array.from(select.options).map(o => o.value).filter(v => v);
-    const isNewEndpoint = !existingNames.includes(name);
-
-    const endpointData = {
-        name: name,
-        base_url: base_url,
-        api_key: api_key,
-        models: models
-    };
-
-    if (isNewEndpoint) {
-        fetch('/api/anthropic/endpoints', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(endpointData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                switchToAnthropicEndpoint(name, models[0] || '');
-                reloadConfig();
-            } else {
-                alert(data.error || '添加端点失败');
-            }
-        })
-        .catch(error => {
-            console.error('添加端点失败:', error);
-            alert('添加端点失败');
-        });
-    } else {
-        fetch(`/api/anthropic/endpoints/${encodeURIComponent(name)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(endpointData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                reloadConfig();
-            } else {
-                alert(data.error || '更新端点失败');
-            }
-        })
-        .catch(error => {
-            console.error('更新端点失败:', error);
-            alert('更新端点失败');
-        });
-    }
-}
-
-function deleteAnthropicEndpoint() {
-    const name = document.getElementById('anthropicEndpointName').value.trim();
-    if (!name) {
-        return;
-    }
-
-    if (!confirm(`确定要删除端点"${name}"吗？`)) {
-        return;
-    }
-
-    fetch(`/api/anthropic/endpoints/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            hideEndpointForm();
-            reloadConfig();
-        } else {
-            alert(data.error || '删除端点失败');
-        }
-    })
-    .catch(error => {
-        console.error('删除端点失败:', error);
-        alert('删除端点失败');
-    });
-}
-
-function switchToAnthropicEndpoint(endpointName, model) {
-    fetch('/api/anthropic/switch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            endpoint_name: endpointName,
-            model: model
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            reloadConfig();
-        }
-    })
-    .catch(error => console.error('切换端点失败:', error));
-}
-
-function reloadConfig() {
-    fetch('/api/config')
-        .then(response => response.json())
-        .then(data => {
-            currentConfig = data;
-            loadAnthropicEndpoints(data);
-            updateModelSelectForProvider();
-        })
-        .catch(error => console.error('重新加载配置失败:', error));
 }
 
 function openConfigModal() {
@@ -1261,39 +887,35 @@ function closeConfigModal() {
 
 function onProviderChange() {
     const provider = document.getElementById('llmProvider').value;
-
+    
     document.getElementById('ollamaGroup').style.display = provider === 'ollama' ? 'block' : 'none';
-
+    
     const apiGroups = document.querySelectorAll('.api-config');
     apiGroups.forEach(group => {
-        if (group.id !== 'anthropicGroup' && group.classList.contains('api-config')) {
-            group.style.display = provider === 'ollama' ? 'none' : 'block';
-        }
+        group.style.display = provider === 'ollama' ? 'none' : 'block';
     });
-
-    const openaiGroups = ['openaiGroup', 'openaiEndpointForm'];
+    
+    const openaiGroups = ['openaiGroup', 'openaiModelGroup', 'openaiKeyGroup'];
     openaiGroups.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = provider === 'openai' ? 'block' : 'none';
     });
-
-    document.getElementById('anthropicGroup').style.display = provider === 'anthropic' ? 'block' : 'none';
-    if (provider !== 'anthropic') {
-        hideEndpointForm();
-    }
-    if (provider !== 'openai') {
-        hideOpenaiEndpointForm();
-    }
-
+    
+    const anthropicGroups = ['anthropicGroup', 'anthropicModelGroup', 'anthropicKeyGroup'];
+    anthropicGroups.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = provider === 'anthropic' ? 'block' : 'none';
+    });
+    
     updateModelSelectForProvider();
 }
 
 function updateModelSelectForProvider() {
     const provider = document.getElementById('llmProvider').value;
     const modelSelect = document.getElementById('modelSelect');
-
+    
     modelSelect.innerHTML = '';
-
+    
     if (provider === 'ollama') {
         const ollamaModels = [
             { value: 'qwen3:8b', text: 'qwen3:8b (文本)' },
@@ -1312,59 +934,33 @@ function updateModelSelectForProvider() {
             modelSelect.appendChild(option);
         });
     } else if (provider === 'openai') {
-        const currentEndpoint = currentConfig.openai_current_endpoint || '';
-        const currentModel = currentConfig.openai_current_model || '';
-        const endpoints = currentConfig.openai_endpoints || [];
-        const ep = endpoints.find(e => e.name === currentEndpoint);
-        const models = ep && ep.models ? ep.models : [];
-
-        if (models.length > 0) {
-            models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                if (model === currentModel) {
-                    option.selected = true;
-                }
-                modelSelect.appendChild(option);
-            });
-        } else {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = '-- 请先添加端点和模型 --';
-            modelSelect.appendChild(option);
-        }
+        const openaiModel = document.getElementById('openaiModel').value || 'gpt-4o';
+        const option = document.createElement('option');
+        option.value = openaiModel;
+        option.textContent = openaiModel;
+        option.selected = true;
+        modelSelect.appendChild(option);
     } else if (provider === 'anthropic') {
-        const currentEndpoint = currentConfig.anthropic_current_endpoint || '';
-        const currentModel = currentConfig.anthropic_current_model || '';
-        const endpoints = currentConfig.anthropic_endpoints || [];
-        const ep = endpoints.find(e => e.name === currentEndpoint);
-        const models = ep && ep.models ? ep.models : [];
-
-        if (models.length > 0) {
-            models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                if (model === currentModel) {
-                    option.selected = true;
-                }
-                modelSelect.appendChild(option);
-            });
-        } else {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = '-- 请先添加端点和模型 --';
-            modelSelect.appendChild(option);
-        }
+        const anthropicModel = document.getElementById('anthropicModel').value || 'claude-sonnet-4-20250514';
+        const option = document.createElement('option');
+        option.value = anthropicModel;
+        option.textContent = anthropicModel;
+        option.selected = true;
+        modelSelect.appendChild(option);
     }
-
+    
     currentModel = modelSelect.value;
 }
 
 function saveConfig() {
     const llmProvider = document.getElementById('llmProvider').value;
     const ollamaBaseUrl = document.getElementById('ollamaBaseUrl').value;
+    const openaiBaseUrl = document.getElementById('openaiBaseUrl').value;
+    const openaiModel = document.getElementById('openaiModel').value;
+    const openaiApiKey = document.getElementById('openaiApiKey').value;
+    const anthropicBaseUrl = document.getElementById('anthropicBaseUrl').value;
+    const anthropicModel = document.getElementById('anthropicModel').value;
+    const anthropicApiKey = document.getElementById('anthropicApiKey').value;
     const maxTurns = parseInt(document.getElementById('maxContextTurns').value);
     const speechRecognitionLang = document.getElementById('speechRecognitionLang').value;
     const speechSynthesisLang = document.getElementById('speechSynthesisLang').value;
@@ -1373,9 +969,15 @@ function saveConfig() {
     fetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ 
             llm_provider: llmProvider,
             ollama_base_url: ollamaBaseUrl,
+            openai_base_url: openaiBaseUrl,
+            openai_model: openaiModel,
+            openai_api_key: openaiApiKey,
+            anthropic_base_url: anthropicBaseUrl,
+            anthropic_model: anthropicModel,
+            anthropic_api_key: anthropicApiKey,
             max_context_turns: maxTurns,
             speech_recognition_lang: speechRecognitionLang,
             speech_synthesis_lang: speechSynthesisLang,
@@ -1429,13 +1031,7 @@ function selectBestVoice(voices, lang) {
 }
 
 function onModelChange() {
-    const modelSelect = document.getElementById('modelSelect');
-    currentModel = modelSelect.value;
-
-    const provider = document.getElementById('llmProvider').value;
-    if (provider === 'anthropic' && currentModel) {
-        switchToAnthropicEndpoint(currentConfig.anthropic_current_endpoint, currentModel);
-    }
+    currentModel = document.getElementById('modelSelect').value;
 }
 
 function handleImageUpload(event) {

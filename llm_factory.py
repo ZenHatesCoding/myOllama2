@@ -39,7 +39,6 @@ def create_llm(
     elif provider == LLMProvider.ANTHROPIC:
         return ChatAnthropic(
             model=model,
-            base_url=base_url,
             anthropic_api_key=api_key,
             temperature=temperature,
             **kwargs

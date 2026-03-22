@@ -93,44 +93,16 @@ class AppState:
         
         self.llm_provider = config.get("llm_provider", "ollama")
         self.ollama_base_url = config.get("ollama_base_url", "http://localhost:11434")
-
-        self.openai_endpoints = config.get("openai_endpoints", [])
-        self.openai_current_endpoint = config.get("openai_current_endpoint", "")
-        self.openai_current_model = config.get("openai_current_model", "")
-
-        self.anthropic_endpoints = config.get("anthropic_endpoints", [])
-        self.anthropic_current_endpoint = config.get("anthropic_current_endpoint", "")
-        self.anthropic_current_model = config.get("anthropic_current_model", "")
-
+        
+        self.openai_api_key = config.get("openai_api_key", "")
+        self.openai_base_url = config.get("openai_base_url", "")
+        self.openai_model = config.get("openai_model", "")
+        
+        self.anthropic_api_key = config.get("anthropic_api_key", "")
+        self.anthropic_base_url = config.get("anthropic_base_url", "")
+        self.anthropic_model = config.get("anthropic_model", "")
+        
         self._load_from_persistence()
-
-    def get_current_openai_endpoint(self):
-        for ep in self.openai_endpoints:
-            if ep.get("name") == self.openai_current_endpoint:
-                return ep
-        return None
-
-    def get_openai_base_url(self):
-        ep = self.get_current_openai_endpoint()
-        return ep.get("base_url", "") if ep else ""
-
-    def get_openai_api_key(self):
-        ep = self.get_current_openai_endpoint()
-        return ep.get("api_key", "") if ep else ""
-
-    def get_current_anthropic_endpoint(self):
-        for ep in self.anthropic_endpoints:
-            if ep.get("name") == self.anthropic_current_endpoint:
-                return ep
-        return None
-
-    def get_anthropic_base_url(self):
-        ep = self.get_current_anthropic_endpoint()
-        return ep.get("base_url", "") if ep else ""
-
-    def get_anthropic_api_key(self):
-        ep = self.get_current_anthropic_endpoint()
-        return ep.get("api_key", "") if ep else ""
 
     def _load_from_persistence(self):
         conversation_manager.validate_index()
