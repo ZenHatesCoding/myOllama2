@@ -134,20 +134,20 @@ elif provider == LLMProvider.ANTHROPIC:
 #### 问题 4：routes.py 生成摘要时模型名硬编码
 `routes.py` 中生成摘要时，模型名被硬编码为 `qwen3.5:9b`，忽略当前配置的 provider 和模型名。
 
-#### 问题 5：node_detect_tool 中 provider 判断错误
-`node_detect_tool` 函数从 `GraphState`（字典）获取 `llm_provider`，但 `GraphState` 没有这个字段，导致总是默认为 `'ollama'`。
+#### 问题 5：classify_intent 中 provider 判断错误
+`classify_intent` 函数从 `GraphState`（字典）获取 `llm_provider`，但 `GraphState` 没有这个字段，导致总是默认为 `'ollama'`。
 
 ### 修复方案
 
 1. **llm_factory.py**：添加 `base_url=base_url` 参数
-2. **agent.py**：3处调用都添加 `base_url` 参数；`node_detect_tool` 改用 `app_state` 获取 provider 和配置
+2. **agent.py**：3处调用都添加 `base_url` 参数；`classify_intent` 改用 `app_state` 获取 provider 和配置
 3. **routes.py**：生成摘要时根据 provider 选择对应模型
 4. **用户配置**：API 地址应填写 `https://api.minimaxi.com/anthropic`
 
 ### 修改的文件
 
 - `llm_factory.py`: ChatAnthropic 添加 base_url 参数
-- `agent.py`: 3处 create_llm 调用添加 base_url 参数；`node_detect_tool` 改用 `app_state`
+- `agent.py`: 3处 create_llm 调用添加 base_url 参数；`classify_intent` 改用 `app_state`
 - `utils.py`: get_llm_model 函数 anthropic 分支添加 base_url 参数
 - `routes.py`: 生成摘要时根据 provider 选择对应模型
 
@@ -370,16 +370,16 @@ def decide_disclosure_level(query: str) -> str:
         return "relevant"
 ```
 
-3. 修改 `node_detect_tool` 根据披露层级调用工具
-4. 修改 `node_retrieve_document` 根据披露层级调整检索数量
+3. 修改 `classify_intent` 根据披露层级调用工具
+4. 修改 `node_retrieve_docs` 根据披露层级调整检索数量
 
 ### 修改的文件
 
 - `graph.py`: 添加 `disclosure_level` 字段和 `DISCLOSURE_LEVELS`、`decide_disclosure_level`
-- `agent.py`: 
+- `agent.py`:
   - 移除 `stream_graph` 中文档工具的特殊处理
-  - `node_detect_tool` 根据披露层级设置工具参数
-  - `node_retrieve_document` 根据披露层级调整 k 值
+  - `classify_intent` 根据披露层级设置工具参数
+  - `node_retrieve_docs` 根据披露层级调整 k 值
 
 ### 修复后效果
 

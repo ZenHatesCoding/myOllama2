@@ -149,7 +149,7 @@ def register_routes(app):
                     query = "请总结这个文档的主要内容"
                     
                     summary_text = ""
-                    for chunk in stream_graph(query, model_name="qwen3.5:9b"):
+                    for chunk in stream_graph(query, model_name="qwen3.5:9b", mode="qa"):
                         if state.should_stop:
                             break
                         summary_text += chunk
@@ -343,6 +343,7 @@ def register_routes(app):
         query = data.get('query', '').strip()
         model_name = data.get('model', 'qwen3.5:9b')
         images = data.get('images', [])
+        mode = data.get('mode', 'qa')
         
         if not query and not images:
             return jsonify({'error': '请输入问题或上传图片'}), 400
@@ -358,7 +359,7 @@ def register_routes(app):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                loop.run_until_complete(generate_answer(query, model_name))
+                loop.run_until_complete(generate_answer(query, model_name, mode))
             finally:
                 loop.close()
         

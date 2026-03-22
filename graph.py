@@ -20,6 +20,7 @@ class GraphState(TypedDict):
     target_skill: Optional[str]
     skill_params: Optional[dict]
     skill_context: Optional[str]
+    mode: str
 
 
 DISCLOSURE_LEVELS = {
@@ -40,7 +41,7 @@ def decide_disclosure_level(query: str) -> str:
         return "relevant"
 
 
-def create_initial_state(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None) -> dict:
+def create_initial_state(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None, mode: str = "qa") -> dict:
     return {
         "messages": [],
         "query": query,
@@ -56,5 +57,6 @@ def create_initial_state(query: str, model_name: str = "qwen3.5:4b", images: Lis
         "disclosure_level": "relevant",
         "target_skill": None,
         "skill_params": None,
-        "skill_context": None
+        "skill_context": None,
+        "mode": mode
     }

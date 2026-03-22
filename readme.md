@@ -5,7 +5,10 @@
 ## 功能特性
 
 ### 核心功能
-- **Skill 支持**：标准格式的 Skill 系统，自动注册，即插即用（详见 [Skill 工作流程](doc/Skill工作流程.md)）
+- **QA/Agent 双模式**：支持问答模式和智能体模式切换，详见 [Skill 工作流程](doc/Skill工作流程.md)
+  - **QA 模式**：文档问答、新闻获取、闲聊，使用 MCP 工具
+  - **Agent 模式**：Skill 调试、文件操作、脚本执行，绑定内置工具（Read/Write/Bash）
+- **Skill 支持**：标准格式的 Skill 系统，自动注册，即插即用
 - **文档渐进式披露问答**：上传文档后，系统根据问题类型智能决定披露层级（摘要/相关片段/完整内容）
 - **多文档格式支持**：PDF、Word (.docx)、纯文本
 - **图片上传**：支持图片上传和多模态问答，支持拖拽上传
@@ -81,110 +84,94 @@ python app.py
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LangGraph Agent (agent.py)                    │
+│                    LangGraph Agent (agent.py)                     │
 │                                                                  │
-│  ┌──────────────┐                                               │
-│  │ detect_tool │ ←── 入口：检测是否需要 MCP 工具               │
-│  └──────┬───────┘                                               │
-│         │                                                        │
-│         ▼                                                        │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │              should_use_tool 决策                         │    │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐   │    │
-│  │  │ target_skill│  │  mcp_result │  │   其他        │   │    │
-│  │  │   已设置     │  │   已设置     │  │              │   │    │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘   │    │
-│  └─────────┼────────────────┼────────────────┼────────────┘    │
-│            ▼                ▼                ▼                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
-│  │ load_skill  │  │   generate   │  │ detect_skill │        │
-│  │ (加载 Skill) │  │ (MCP 结果)   │  │ (检测 Skill) │        │
-│  └──────┬───────┘  └──────────────┘  └──────┬───────┘        │
-│         │                                      │                 │
-│         │              ┌──────────────────────┼────────────┐    │
-│         │              ▼                      ▼            │    │
-│         │       ┌─────────────────────────────────────┐   │    │
-│         │       │        should_use_skill 决策          │   │    │
-│         │       │  ┌─────────────┐  ┌─────────────┐   │   │    │
-│         │       │  │target_skill │  │   其他      │   │   │    │
-│         │       │  │  已设置     │  │             │   │   │    │
-│         │       │  └──────┬─────┘  └──────┬──────┘   │   │    │
-│         │       └─────────┼───────────────┼──────────┘   │    │
-│         │                 ▼               ▼                │    │
-│         │          ┌────────────┐  ┌──────────────┐     │    │
-│         │          │load_skill  │  │retrieve_doc  │     │    │
-│         │          └─────┬──────┘  └──────┬───────┘     │    │
-│         │                │                │              │    │
-│         │                └────────┬───────┘              │    │
-│         │                         ▼                      │    │
-│         │                  ┌──────────────┐              │    │
-│         │                  │retrieve_hist │              │    │
-│         │                  └──────┬───────┘              │    │
-│         │                         ▼                      │    │
-│         │                  ┌──────────────┐              │    │
-│         └─────────────────▶│   generate  │◀─────────────┘    │
-│                            │ (Skill/MCP/ │                  │
-│                            │  Doc/Chat)  │                  │
-│                            └──────┬───────┘                  │
-│                                   ▼                           │
-│                            ┌──────────────┐                   │
-│                            │  SSE Stream  │                   │
-│                            └──────────────┘                   │
+│            stream_graph(query, mode)                              │
+│                     │                                             │
+│         ┌───────────┴───────────┐                               │
+│         ▼                       ▼                                │
+│   ┌─────────────┐         ┌─────────────┐                      │
+│   │  QA Graph   │         │ Agent Graph │                      │
+│   │build_qa_    │         │build_agent_ │                      │
+│   │  graph()    │         │  graph()    │                      │
+│   └─────────────┘         └─────────────┘                      │
+│         │                       │                                │
+│         ▼                       ▼                                │
+│  classify_intent ──────→ match_skill                            │
+│         │                       │                                │
+│         ▼                       ▼                                │
+│  retrieve_docs           activate_skill                         │
+│         │                       │                                │
+│         ▼                       ▼                                │
+│  retrieve_history       generate_response                       │
+│         │                       │                                │
+│         ▼                       │                                │
+│  generate_response ◀──────────┘                                │
+│         │                                                    │
+│         ▼                                                    │
+│  ┌──────────────┐                                           │
+│  │  SSE Stream  │                                           │
+│  └──────────────┘                                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### LangGraph 工作流
 
-项目采用 **LangGraph** 实现状态化的工作流，每个请求都会经过以下节点：
+项目采用 **LangGraph** 实现状态化的工作流，通过**两个独立的 Graph** 分别处理 QA 模式和 Agent 模式：
 
 ```python
-graph = StateGraph(GraphState)
+# QA 模式 Graph
+def build_qa_graph():
+    graph = StateGraph(GraphState)
+    graph.add_node("classify_intent", node_classify_intent)
+    graph.add_node("retrieve_docs", node_retrieve_docs)
+    graph.add_node("retrieve_history", node_retrieve_history)
+    graph.add_node("generate_response", node_generate_response)
+    graph.set_entry_point("classify_intent")
+    # ... QA 模式边
+    return graph.compile()
 
-graph.add_node("detect_tool", node_detect_tool)      # 检测 MCP 工具
-graph.add_node("detect_skill", node_detect_skill)    # 检测 Skill 意图
-graph.add_node("load_skill", node_load_skill)        # 加载 Skill 上下文
-graph.add_node("retrieve_document", node_retrieve_document)  # 文档检索
-graph.add_node("retrieve_history", node_retrieve_history)    # 历史检索
-graph.add_node("generate", node_generate)            # LLM 生成回答
+# Agent 模式 Graph
+def build_agent_graph():
+    graph = StateGraph(GraphState)
+    graph.add_node("match_skill", node_match_skill)
+    graph.add_node("activate_skill", node_activate_skill)
+    graph.add_node("generate_response", node_generate_response)
+    graph.set_entry_point("match_skill")
+    # ... Agent 模式边
+    return graph.compile()
 
-graph.set_entry_point("detect_tool")
-
-graph.add_conditional_edges("detect_tool", should_use_tool, {
-    "load_skill": "load_skill",           # Skill 已触发
-    "generate": "generate",               # MCP 工具结果
-    "detect_skill": "detect_skill"       # 进入 Skill 检测
-})
-
-graph.add_conditional_edges("detect_skill", should_use_skill, {
-    "load_skill": "load_skill",           # Skill 意图匹配
-    "retrieve_document": "retrieve_document"  # 普通文档问答
-})
-
-graph.add_edge("load_skill", "generate")
-graph.add_edge("retrieve_document", "retrieve_history")
-graph.add_edge("retrieve_history", "generate")
-graph.add_edge("generate", END)
+# stream_graph 根据 mode 动态选择
+def stream_graph(query, model_name, images, mode):
+    if mode == "qa":
+        executor = build_qa_graph()
+    else:
+        executor = build_agent_graph()
+    # ...
 ```
+
+**模式说明**：
+
+| 模式 | 入口节点 | 流程 | 工具绑定 |
+|------|----------|------|----------|
+| **QA** | `classify_intent` | `→ retrieve_docs → retrieve_history → generate_response` | ❌ 不绑定 |
+| **Agent** | `match_skill` | `→ activate_skill → generate_response` | ✅ 绑定内置工具 |
 
 **节点说明**：
 
-| 节点 | 功能 | 说明 |
-|------|------|------|
-| `detect_tool` | 意图识别 | 检测是否需要 MCP 工具（新闻等） |
-| `detect_skill` | Skill 检测 | 检测是否触发某个 Skill |
-| `load_skill` | 加载 Skill | 加载 Skill 的完整内容和工具 |
-| `retrieve_document` | 文档检索 | RAG 向量检索 + 渐进式披露 |
-| `retrieve_history` | 历史检索 | 语义检索相关历史对话 |
-| `generate` | 生成回答 | 整合 Skill/MCP/文档/历史上下文 |
+| 节点 | 功能 | 所属模式 |
+|------|------|----------|
+| `classify_intent` | 检测是否需要 MCP 工具 | QA |
+| `match_skill` | 检测 Skill 意图 | Agent |
+| `activate_skill` | 加载 Skill 上下文 | Agent |
+| `retrieve_docs` | 文档检索 | QA |
+| `retrieve_history` | 历史检索 | QA |
+| `generate_response` | 生成回答 | 共用 |
 
-**四种对话模式**：
-
-| 模式 | 触发条件 | 上下文 |
-|------|----------|--------|
-| **Skill 模式** | 用户请求匹配 Skill description | Skill 内容 + 内置工具 |
-| **MCP 模式** | 用户请求需要新闻等工具 | MCP 工具结果 |
-| **文档模式** | 上传文档后的问答 | RAG 检索结果 + 渐进式披露 |
-| **普通对话** | 其他情况 | 历史对话 + Skill 列表（始终可用） |
+**Agent 模式特点**：
+- 绑定内置工具（Read/Write/Bash/Glob/Grep）
+- 支持模型自主工具调用循环
+- Skill 上下文按需注入
 
 ### 渐进式披露设计
 
@@ -278,9 +265,11 @@ def decide_disclosure_level(query: str) -> str:
 
 #### LangGraph 与 MCP 的集成
 
+MCP 工具集成在 **QA 模式**的 `classify_intent` 节点中：
+
 ```python
-# agent.py - node_detect_tool 节点
-def node_detect_tool(state: GraphState) -> dict:
+# agent.py - classify_intent 节点（QA 模式）
+def node_classify_intent(state: GraphState) -> dict:
     # 1. 分析问题意图
     tools_schema = build_tools_schema()
     intent = detect_tool_intent(llm, query, tools_schema)
@@ -366,6 +355,8 @@ description: 将 PDF 论文转换为 Org 格式进行分析。当你需要分析
 ```
 
 #### 内置 Skill 工具
+
+> **注意**：内置工具仅在 Agent 模式下可用
 
 | 工具 | 功能 |
 |------|------|
@@ -499,9 +490,9 @@ myOllama/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LangGraph 工作流                              │
+│                    LangGraph 工作流 (QA 模式)                     │
 │                                                                  │
-│  query → detect_tool → retrieve_document → retrieve_history → │
+│  query → classify_intent → retrieve_docs → retrieve_history →   │
 │                               │                    │            │
 │                               ▼                    ▼            │
 │                    文档检索 (retriever)    历史 RAG            │
@@ -510,7 +501,7 @@ myOllama/
 │                               │                    │            │
 │                               └────────┬───────────┘            │
 │                                        ▼                         │
-│                              generate (生成回答)                │
+│                              generate_response (生成回答)        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

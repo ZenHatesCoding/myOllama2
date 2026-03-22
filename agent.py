@@ -11,6 +11,7 @@ from tools import get_all_tools, news_toolkit
 from document_tools import document_tools, get_document_summary, get_document_outline
 from extensions import state
 from llm_factory import create_llm
+from builtin_tools import get_builtin_tools
 from skill_registry import skill_registry
 
 
@@ -362,48 +363,165 @@ def node_generate_response(state: GraphState) -> dict:
     from extensions import state as app_state
     provider = app_state.llm_provider if hasattr(app_state, 'llm_provider') else 'ollama'
     
-    if provider == "ollama":
-        llm = ChatOllama(
-            model=model_name,
-            base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
-            temperature=0.7,
-            num_ctx=32000,
-            num_predict=8000
-        )
-    elif provider == "openai":
-        llm = create_llm(
-            provider="openai",
-            model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
-            base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
-            api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
-            temperature=0.7
-        )
-    elif provider == "anthropic":
-        llm = create_llm(
-            provider="anthropic",
-            model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
-            base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
-            api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
-            temperature=0.7
-        )
-    else:
-        llm = ChatOllama(
-            model=model_name,
-            base_url="http://localhost:11434",
-            temperature=0.7,
-            num_ctx=32000,
-            num_predict=8000
-        )
-    
     conversation = app_state.get_current_conversation()
+    builtin_tools = get_builtin_tools()
+    mode = state.get("mode", "qa")
 
-    if skill_context:
-        system_prompt = f"""{skill_context}
+    if mode == "agent":
+        if skill_context:
+            system_prompt = f"""{skill_context}
 
-请根据上述 Skill 指导完成任务，完成后向用户报告结果。
+你是一个专业的 AI 助手，可以使用内置工具（Read、Write、Bash、Glob、Grep）来完成用户任务。
+
+当你需要读取文件时，使用 Read 工具。
+当你需要创建或修改文件时，使用 Write 工具。
+当你需要执行命令或脚本时，使用 Bash 工具。
+当你需要搜索文件时，使用 Glob 工具。
+当你需要在文件中搜索内容时，使用 Grep 工具。
+
+请根据上述 Skill 指导完成任务。完成后向用户报告结果。
 
 请开始回答："""
+        else:
+            system_prompt = """你是一个专业的 AI 助手，可以使用内置工具（Read、Write、Bash、Glob、Grep）来完成用户任务。
+
+当你需要读取文件时，使用 Read 工具。
+当你需要创建或修改文件时，使用 Write 工具。
+当你需要执行命令或脚本时，使用 Bash 工具。
+当你需要搜索文件时，使用 Glob 工具。
+当你需要在文件中搜索内容时，使用 Grep 工具。
+
+请根据用户需求自主决定何时调用工具。完成后向用户报告结果。
+
+请开始回答："""
+        
+        if provider == "ollama":
+            llm = ChatOllama(
+                model=model_name,
+                base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
+                temperature=0.7,
+                num_ctx=32000,
+                num_predict=8000
+            ).bind_tools(builtin_tools)
+        elif provider == "openai":
+            llm = create_llm(
+                provider="openai",
+                model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
+                base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+                api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
+                temperature=0.7
+            ).bind_tools(builtin_tools)
+        elif provider == "anthropic":
+            llm = create_llm(
+                provider="anthropic",
+                model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
+                base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+                api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
+                temperature=0.7
+            ).bind_tools(builtin_tools)
+        else:
+            llm = ChatOllama(
+                model=model_name,
+                base_url="http://localhost:11434",
+                temperature=0.7,
+                num_ctx=32000,
+                num_predict=8000
+            ).bind_tools(builtin_tools)
+        
+        from utils import prepare_messages
+        messages = prepare_messages(conversation, query, system_prompt, images if images else None)
+        
+        output_content = ""
+        tool_result_buffer = []
+        
+        for chunk in llm.stream(messages):
+            if app_state.should_stop:
+                output_content += "\n\n操作已中断"
+                break
+            
+            if hasattr(chunk, 'content') and isinstance(chunk.content, list):
+                for part in chunk.content:
+                    if isinstance(part, dict):
+                        if part.get('type') == 'text':
+                            text = part.get('text', '')
+                            output_content += text
+                        elif part.get('type') == 'tool_use':
+                            tool_name = part.get('name', '')
+                            tool_input = part.get('input', {})
+                            tool_id = part.get('id', '')
+                            tool_result = _execute_builtin_tool(tool_name, tool_input)
+                            tool_result_buffer.append({
+                                'tool_call_id': tool_id,
+                                'tool_name': tool_name,
+                                'result': tool_result
+                            })
+                            output_content += f"\n[执行工具: {tool_name}]\n"
+                    elif isinstance(part, str):
+                        output_content += part
+            else:
+                chunk_text = str(getattr(chunk, 'content', chunk))
+                output_content += chunk_text
+            
+            if tool_result_buffer:
+                continue
+        
+        if tool_result_buffer:
+            messages.append(AIMessage(content=output_content))
+            for tr in tool_result_buffer:
+                messages.append(HumanMessage(
+                    content=f"工具 {tr['tool_name']} 返回结果: {tr['result']}"
+                ))
+            
+            output_content = ""
+            for chunk in llm.stream(messages):
+                if app_state.should_stop:
+                    output_content += "\n\n操作已中断"
+                    break
+                
+                if hasattr(chunk, 'content') and isinstance(chunk.content, list):
+                    for part in chunk.content:
+                        if isinstance(part, dict) and part.get('type') == 'text':
+                            output_content += part.get('text', '')
+                        elif isinstance(part, str):
+                            output_content += part
+                else:
+                    output_content += str(getattr(chunk, 'content', chunk))
+        
+        return {"output_content": output_content}
     else:
+        if provider == "ollama":
+            llm = ChatOllama(
+                model=model_name,
+                base_url=app_state.ollama_base_url if hasattr(app_state, 'ollama_base_url') else "http://localhost:11434",
+                temperature=0.7,
+                num_ctx=32000,
+                num_predict=8000
+            )
+        elif provider == "openai":
+            llm = create_llm(
+                provider="openai",
+                model=app_state.openai_current_model if hasattr(app_state, 'openai_current_model') and app_state.openai_current_model else model_name,
+                base_url=app_state.get_openai_base_url() if hasattr(app_state, 'get_openai_base_url') else None,
+                api_key=app_state.get_openai_api_key() if hasattr(app_state, 'get_openai_api_key') else None,
+                temperature=0.7
+            )
+        elif provider == "anthropic":
+            llm = create_llm(
+                provider="anthropic",
+                model=app_state.anthropic_current_model if hasattr(app_state, 'anthropic_current_model') and app_state.anthropic_current_model else model_name,
+                base_url=app_state.get_anthropic_base_url() if hasattr(app_state, 'get_anthropic_base_url') else None,
+                api_key=app_state.get_anthropic_api_key() if hasattr(app_state, 'get_anthropic_api_key') else None,
+                temperature=0.7
+            )
+        else:
+            llm = ChatOllama(
+                model=model_name,
+                base_url="http://localhost:11434",
+                temperature=0.7,
+                num_ctx=32000,
+                num_predict=8000
+            )
+        
         context_parts = []
         if has_document and document_context:
             context_parts.append(f"【文档内容】\n{document_context}")
@@ -420,33 +538,152 @@ def node_generate_response(state: GraphState) -> dict:
 2. 回答要简洁、有条理
 
 请开始回答："""
+        
+        from utils import prepare_messages
+        messages = prepare_messages(conversation, query, system_prompt, images if images else None)
+        
+        output_content = ""
+        for chunk in llm.stream(messages):
+            if app_state.should_stop:
+                output_content += "\n\n操作已中断"
+                break
+            
+            if hasattr(chunk, 'content') and isinstance(chunk.content, list):
+                text_parts = []
+                for part in chunk.content:
+                    if isinstance(part, dict) and part.get('type') == 'text':
+                        text_parts.append(part.get('text', ''))
+                    elif isinstance(part, str):
+                        text_parts.append(part)
+                chunk_text = ''.join(text_parts)
+            else:
+                chunk_text = str(chunk.content)
+            
+            output_content += chunk_text
+        
+        return {"output_content": output_content}
+
+
+def _execute_builtin_tool(tool_name: str, tool_input: dict) -> str:
+    tool_map = {
+        'Read': lambda inp: _tool_read(inp.get('path', ''), inp.get('encoding', 'utf-8')),
+        'Write': lambda inp: _tool_write(inp.get('path', ''), inp.get('content', ''), inp.get('encoding', 'utf-8')),
+        'Bash': lambda inp: _tool_bash(inp.get('command', ''), inp.get('timeout', 60)),
+        'Glob': lambda inp: _tool_glob(inp.get('pattern', '')),
+        'Grep': lambda inp: _tool_grep(inp.get('pattern', ''), inp.get('path', './'), inp.get('encoding', 'utf-8')),
+    }
     
-    from utils import prepare_messages
-    messages = prepare_messages(conversation, query, system_prompt, images if images else None)
+    func = tool_map.get(tool_name)
+    if func:
+        try:
+            return func(tool_input)
+        except Exception as e:
+            return f"工具执行错误: {str(e)}"
+    return f"未知工具: {tool_name}"
+
+
+def _tool_read(path: str, encoding: str = "utf-8") -> str:
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).parent.resolve()
+    p = Path(path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / path
+    if p.exists():
+        return p.read_text(encoding=encoding)
+    return f"文件不存在: {path}"
+
+
+def _tool_write(path: str, content: str, encoding: str = "utf-8") -> str:
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).parent.resolve()
+    p = Path(path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding=encoding)
+    return f"成功写入: {path}"
+
+
+def _tool_bash(command: str, timeout: int = 60) -> str:
+    import subprocess
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        if result.returncode != 0:
+            return f"命令失败 (退出码 {result.returncode}):\n{result.stderr}"
+        return result.stdout if result.stdout else "命令执行成功"
+    except subprocess.TimeoutExpired:
+        return f"命令超时 ({timeout}秒)"
+    except Exception as e:
+        return f"命令执行错误: {str(e)}"
+
+
+def _tool_glob(pattern: str) -> str:
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).parent.resolve()
+    ALLOWED_DIRS = [
+        PROJECT_ROOT / "skills",
+        PROJECT_ROOT / "workspace",
+        PROJECT_ROOT / "conversations",
+        PROJECT_ROOT / "output",
+    ]
+    results = []
+    for base_dir in ALLOWED_DIRS:
+        if base_dir.exists():
+            for f in base_dir.glob(pattern):
+                if f.is_file():
+                    results.append(str(f.relative_to(PROJECT_ROOT)))
+    return "\n".join(results) if results else f"没有找到匹配 {pattern} 的文件"
+
+
+def _tool_grep(pattern: str, path: str = "./", encoding: str = "utf-8") -> str:
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).parent.resolve()
+    ALLOWED_DIRS = [
+        PROJECT_ROOT / "skills",
+        PROJECT_ROOT / "workspace",
+        PROJECT_ROOT / "conversations",
+        PROJECT_ROOT / "output",
+    ]
+    p = Path(path)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / path
     
-    output_content = ""
-    for chunk in llm.stream(messages):
-        if app_state.should_stop:
-            output_content += "\n\n操作已中断"
+    matches = []
+    for base_dir in ALLOWED_DIRS:
+        if str(p).startswith(str(base_dir)) and base_dir.exists():
+            for f in base_dir.rglob("*.py"):
+                try:
+                    content = f.read_text(encoding=encoding)
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if pattern in line:
+                            matches.append(f"{f.relative_to(PROJECT_ROOT)}:{i}: {line.strip()}")
+                except:
+                    pass
             break
-        
-        if hasattr(chunk, 'content') and isinstance(chunk.content, list):
-            text_parts = []
-            for part in chunk.content:
-                if isinstance(part, dict) and part.get('type') == 'text':
-                    text_parts.append(part.get('text', ''))
-                elif isinstance(part, str):
-                    text_parts.append(part)
-            chunk_text = ''.join(text_parts)
-        else:
-            chunk_text = str(chunk.content)
-        
-        output_content += chunk_text
     
-    return {"output_content": output_content}
+    return "\n".join(matches[:50]) if matches else f"没有找到匹配 {pattern} 的内容"
+
+
+def route_by_mode(state: GraphState) -> str:
+    mode = state.get("mode", "qa")
+    
+    if mode == "agent":
+        target_skill = state.get("target_skill")
+        if target_skill:
+            return "activate_skill"
+        return "match_skill"
+    
+    return "classify_intent"
 
 
 def should_use_tool(state: GraphState) -> str:
+    mode = state.get("mode", "qa")
     target_skill = state.get("target_skill")
     mcp_result = state.get("mcp_result")
 
@@ -454,17 +691,35 @@ def should_use_tool(state: GraphState) -> str:
         return "activate_skill"
     elif mcp_result and mcp_result.get("success"):
         return "generate_response"
+    
+    if mode == "qa":
+        return "retrieve_docs"
     return "match_skill"
 
 
 def should_use_skill(state: GraphState) -> str:
+    mode = state.get("mode", "qa")
     target_skill = state.get("target_skill")
     skill_context = state.get("skill_context")
+
     if target_skill:
         return "activate_skill"
     if skill_context:
         return "generate_response"
+    if mode == "agent":
+        return "generate_response"
     return "retrieve_docs"
+
+
+def should_use_skill_agent(state: GraphState) -> str:
+    target_skill = state.get("target_skill")
+    skill_context = state.get("skill_context")
+
+    if target_skill:
+        return "activate_skill"
+    if skill_context:
+        return "generate_response"
+    return "generate_response"
 
 
 def node_match_skill(state: GraphState) -> dict:
@@ -556,9 +811,77 @@ def node_activate_skill(state: GraphState) -> dict:
     return {"skill_context": skill_context}
 
 
+_qa_graph = None
+_agent_graph = None
+
+
+def should_use_tool_qa(state: GraphState) -> str:
+    mcp_result = state.get("mcp_result")
+    if mcp_result and mcp_result.get("success"):
+        return "generate_response"
+    return "retrieve_docs"
+
+
+def build_qa_graph():
+    global _qa_graph
+    if _qa_graph is None:
+        graph = StateGraph(GraphState)
+
+        graph.add_node("classify_intent", node_classify_intent)
+        graph.add_node("retrieve_docs", node_retrieve_docs)
+        graph.add_node("retrieve_history", node_retrieve_history)
+        graph.add_node("generate_response", node_generate_response)
+
+        graph.set_entry_point("classify_intent")
+
+        graph.add_conditional_edges(
+            "classify_intent",
+            should_use_tool_qa,
+            {
+                "generate_response": "generate_response",
+                "retrieve_docs": "retrieve_docs"
+            }
+        )
+
+        graph.add_edge("retrieve_docs", "retrieve_history")
+        graph.add_edge("retrieve_history", "generate_response")
+        graph.add_edge("generate_response", END)
+
+        _qa_graph = graph.compile(checkpointer=MemorySaver())
+    return _qa_graph
+
+
+def build_agent_graph():
+    global _agent_graph
+    if _agent_graph is None:
+        graph = StateGraph(GraphState)
+
+        graph.add_node("match_skill", node_match_skill)
+        graph.add_node("activate_skill", node_activate_skill)
+        graph.add_node("generate_response", node_generate_response)
+
+        graph.set_entry_point("match_skill")
+
+        graph.add_conditional_edges(
+            "match_skill",
+            should_use_skill_agent,
+            {
+                "activate_skill": "activate_skill",
+                "generate_response": "generate_response"
+            }
+        )
+
+        graph.add_edge("activate_skill", "generate_response")
+        graph.add_edge("generate_response", END)
+
+        _agent_graph = graph.compile(checkpointer=MemorySaver())
+    return _agent_graph
+
+
 def build_graph():
     graph = StateGraph(GraphState)
 
+    graph.add_node("route_by_mode", lambda state: state)
     graph.add_node("classify_intent", node_classify_intent)
     graph.add_node("match_skill", node_match_skill)
     graph.add_node("activate_skill", node_activate_skill)
@@ -566,7 +889,16 @@ def build_graph():
     graph.add_node("retrieve_history", node_retrieve_history)
     graph.add_node("generate_response", node_generate_response)
 
-    graph.set_entry_point("classify_intent")
+    graph.set_entry_point("route_by_mode")
+
+    graph.add_conditional_edges(
+        "route_by_mode",
+        route_by_mode,
+        {
+            "qa": "classify_intent",
+            "agent": "match_skill"
+        }
+    )
 
     graph.add_conditional_edges(
         "classify_intent",
@@ -583,7 +915,6 @@ def build_graph():
         should_use_skill,
         {
             "activate_skill": "activate_skill",
-            "retrieve_docs": "retrieve_docs",
             "generate_response": "generate_response"
         }
     )
@@ -606,20 +937,28 @@ def get_graph_executor():
     return graph_executor
 
 
-def run_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None) -> str:
-    initial_state = create_initial_state(query, model_name, images)
-    executor = get_graph_executor()
+def run_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None, mode: str = "qa") -> str:
+    initial_state = create_initial_state(query, model_name, images, mode)
+    
+    if mode == "qa":
+        executor = build_qa_graph()
+    else:
+        executor = build_agent_graph()
     
     result = executor.invoke(initial_state, config={"configurable": {"thread_id": "default"}})
     
     return result.get("output_content", "")
 
 
-def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None):
+def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None, mode: str = "qa"):
     from extensions import state as app_state
     
-    initial_state = create_initial_state(query, model_name, images)
-    executor = get_graph_executor()
+    initial_state = create_initial_state(query, model_name, images, mode)
+    
+    if mode == "qa":
+        executor = build_qa_graph()
+    else:
+        executor = build_agent_graph()
     
     mcp_result = None
     
@@ -629,7 +968,7 @@ def stream_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] 
             return
         
         for node_name, node_output in event.items():
-            if node_name == "detect_tool":
+            if node_name == "classify_intent":
                 mcp_result = node_output.get("mcp_result")
                 if mcp_result and mcp_result.get("success"):
                     tool_name = mcp_result.get("tool_name", "")

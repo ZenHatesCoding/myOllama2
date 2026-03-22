@@ -213,7 +213,7 @@ def prepare_messages(conversation, query, system_prompt, images=None):
     return messages
 
 
-async def generate_answer(query, model_name=None):
+async def generate_answer(query, model_name=None, mode="qa"):
     from agent import stream_graph
     from tools import news_toolkit
     from document_tools import document_tools, get_document_summary, get_document_outline
@@ -224,7 +224,7 @@ async def generate_answer(query, model_name=None):
         if model_name is None:
             model_name = "qwen3.5:4b"
         
-        print(f"开始生成回答，模型: {model_name} (LangGraph工作流)")
+        print(f"开始生成回答，模型: {model_name}，模式: {mode} (LangGraph工作流)")
         
         conversation.add_message("user", query)
         
@@ -232,7 +232,7 @@ async def generate_answer(query, model_name=None):
         
         full_response = ""
         
-        for chunk in stream_graph(query, model_name, images):
+        for chunk in stream_graph(query, model_name, images, mode):
             if state.should_stop:
                 full_response += "\n\n操作已中断"
                 state.response_queue.put(("chunk", "\n\n操作已中断"))

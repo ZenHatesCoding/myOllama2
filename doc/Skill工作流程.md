@@ -2,216 +2,219 @@
 
 ## 整体架构
 
-Skill 系统基于 LangGraph 工作流，通过**意图分类**决定如何处理用户请求。
+Skill 系统基于 LangGraph 工作流，通过**两个独立的 Graph** 分别处理 QA 模式和 Agent 模式。
 
 ```
-用户输入
+stream_graph(query, mode)
     │
-    ▼
-┌─────────────────────────────────────┐
-│        classify_intent               │
-│    (分类用户意图：工具/Skill/聊天)    │
-└─────────────────────────────────────┘
-    │ 无 MCP 工具
-    ▼
-┌─────────────────────────────────────┐
-│          match_skill                 │
-│    (匹配 Skill / 询问列表)            │
-└─────────────────────────────────────┘
+    ├─── mode = "qa" ──────────→ build_qa_graph()
+    │                              │
+    │                              ▼
+    │                         QA Graph
+    │    classify_intent → retrieve_docs → retrieve_history → generate_response
     │
-    ├─── 需要执行 Skill ────────────────→ activate_skill → generate_response
-    │
-    ├─── 询问 Skill 列表 ───────────────→ generate_response (直接返回列表)
-    │
-    └─── 普通聊天 ──────────────────────→ retrieve_docs → generate_response
+    └─── mode = "agent" ───────→ build_agent_graph()
+                                   │
+                                   ▼
+                              Agent Graph
+                match_skill → activate_skill → generate_response
 ```
 
 ---
 
-## 三种处理场景
+## QA 模式 Graph
 
-### 场景 A：询问 Skill 列表
-
-**触发条件**：用户问"你有什么 skill"、"列出所有技能"等
+### 流程
 
 ```
-用户输入："你有什么 skill"
-    │
-    ▼
-match_skill:
-  - LLM 判断：intent = {list_skills: true}
-  - 或关键词 fallback：["什么skill", "什么技能", "列出", "list"]
-    │
-    ▼
-返回 {target_skill: None, skill_context: "【可用Skill列表】..."}
-    │
-    ▼
-should_use_skill:
-  - skill_context 存在 → 返回 "generate_response"
-    │
-    ▼
-generate_response:
-  - skill_context 构建 system_prompt
-  - 模型返回 Skill 列表给用户
+用户输入 → classify_intent → retrieve_docs → retrieve_history → generate_response
 ```
 
----
+### 特点
 
-### 场景 B：执行 Skill
+- 不注入 Skill 上下文
+- 不绑定内置工具
+- 使用新闻 MCP 和文档 RAG 工具
+- `generate_response` 节点：无工具绑定版本
 
-**触发条件**：用户请求与某 Skill 描述相符（如"帮我审查代码"）
-
-```
-用户输入："帮我审查代码"
-    │
-    ▼
-match_skill:
-  - LLM 判断：intent = {need_skill: true, skill_name: "code-review"}
-    │
-    ▼
-返回 {target_skill: "code-review", skill_context: None}
-    │
-    ▼
-should_use_skill:
-  - target_skill 存在 → 返回 "activate_skill"
-    │
-    ▼
-activate_skill:
-  - 从 skill_registry 获取 code-review 的完整内容
-    │
-    ▼
-返回 {skill_context: "【激活Skill】..."}
-    │
-    ▼
-should_use_skill:
-  - skill_context 存在 → 返回 "generate_response"
-    │
-    ▼
-generate_response:
-  - skill_context 构建 system_prompt
-  - 模型执行 Skill 定义的任务
-```
-
----
-
-### 场景 C：普通聊天
-
-**触发条件**：用户正常聊天，无 Skill 相关意图
-
-```
-用户输入："今天天气怎么样"
-    │
-    ▼
-match_skill:
-  - LLM 判断：intent = {need_skill: false}
-  - 关键词检测：不匹配
-    │
-    ▼
-返回 {target_skill: None, skill_context: None}
-    │
-    ▼
-should_use_skill:
-  - target_skill = None ❌
-  - skill_context = None ❌
-  - 返回 "retrieve_docs"
-    │
-    ▼
-retrieve_docs → retrieve_history → generate_response
-  - 正常对话流程，无 Skill 干扰
-```
-
----
-
-## 节点说明
+### 节点
 
 | 节点 | 函数 | 职责 |
 |------|------|------|
-| `classify_intent` | `node_classify_intent` | 检测是否需要 MCP 工具 |
-| `match_skill` | `node_match_skill` | 检测 Skill 意图 / 列表查询 |
-| `activate_skill` | `node_activate_skill` | 加载 Skill 上下文 |
+| `classify_intent` | `node_classify_intent` | 检测是否需要 MCP 工具（新闻/文档） |
 | `retrieve_docs` | `node_retrieve_docs` | RAG 文档检索 |
 | `retrieve_history` | `node_retrieve_history` | 历史对话检索 |
-| `generate_response` | `node_generate_response` | 生成最终回答 |
+| `generate_response` | `node_generate_response` | 生成回答（无工具绑定） |
+
+### 条件边
+
+`classify_intent` 节点的 `should_use_tool_qa` 决策：
+
+| 条件 | 下一节点 |
+|------|----------|
+| 有 MCP 结果 | `generate_response` |
+| 否则 | `retrieve_docs` |
+
+---
+
+## Agent 模式 Graph
+
+### 流程
+
+```
+用户输入 → match_skill → activate_skill → generate_response
+```
+
+### 特点
+
+- 注入 Skill 上下文（如果有匹配）
+- 绑定内置工具（Read/Write/Bash/Glob/Grep）
+- 支持模型自主工具调用循环
+- `generate_response` 节点：工具绑定版本
+
+### 节点
+
+| 节点 | 函数 | 职责 |
+|------|------|------|
+| `match_skill` | `node_match_skill` | 检测 Skill 意图 |
+| `activate_skill` | `node_activate_skill` | 加载 Skill 上下文 |
+| `generate_response` | `node_generate_response` | 生成回答（绑定内置工具） |
+
+### 条件边
+
+`match_skill` 节点的 `should_use_skill_agent` 决策：
+
+| 条件 | 下一节点 |
+|------|----------|
+| `target_skill` 有值 | `activate_skill` |
+| 其他 | `generate_response` |
+
+### 工具调用循环
+
+```
+generate_response:
+  1. 绑定内置工具（Read/Write/Bash/Glob/Grep）
+  2. 模型生成文本或工具调用
+  3. 执行工具，结果反馈给模型
+  4. 循环直到模型输出最终回答
+```
 
 ---
 
 ## 核心函数说明
 
-### detect_skill_intent
+### build_qa_graph()
 
-用 LLM 判断用户意图，返回三种结果：
+构建 QA 模式的 LangGraph：
 
 ```python
-# 1. 需要执行某个 Skill
-{"need_skill": true, "skill_name": "code-review"}
-
-# 2. 询问 Skill 列表
-{"list_skills": true}
-
-# 3. 普通聊天
-{"need_skill": false}
+def build_qa_graph():
+    graph = StateGraph(GraphState)
+    graph.add_node("classify_intent", node_classify_intent)
+    graph.add_node("retrieve_docs", node_retrieve_docs)
+    graph.add_node("retrieve_history", node_retrieve_history)
+    graph.add_node("generate_response", node_generate_response)
+    graph.set_entry_point("classify_intent")
+    # ... 添加边
+    return graph.compile(checkpointer=MemorySaver())
 ```
 
-### node_match_skill
+### build_agent_graph()
 
-- 调用 `detect_skill_intent` 用 LLM 判断
-- 提供关键词 fallback 机制，防止 LLM 判断不准确
-- 根据判断结果设置 `target_skill` 和 `skill_context`
+构建 Agent 模式的 LangGraph：
 
-### should_use_skill
+```python
+def build_agent_graph():
+    graph = StateGraph(GraphState)
+    graph.add_node("match_skill", node_match_skill)
+    graph.add_node("activate_skill", node_activate_skill)
+    graph.add_node("generate_response", node_generate_response)
+    graph.set_entry_point("match_skill")
+    # ... 添加边
+    return graph.compile(checkpointer=MemorySaver())
+```
 
-决策路由：
+### stream_graph()
 
-| target_skill | skill_context | 路由 |
-|--------------|---------------|------|
-| 有值 | - | `activate_skill` |
-| None | 有值 | `generate_response` |
-| None | None | `retrieve_docs` |
+根据 mode 动态选择 Graph：
 
-### node_activate_skill
+```python
+def stream_graph(query, model_name, images, mode):
+    initial_state = create_initial_state(query, model_name, images, mode)
 
-- 根据 `target_skill` 从 `skill_registry` 获取 Skill 完整内容
-- 设置 `skill_context` 供后续节点使用
+    if mode == "qa":
+        executor = build_qa_graph()
+    else:
+        executor = build_agent_graph()
+
+    for event in executor.stream(initial_state, ...):
+        # 处理事件
+```
+
+### node_generate_response()
+
+内部通过 `mode` 字段判断使用哪个逻辑：
+
+```python
+def node_generate_response(state: GraphState) -> dict:
+    mode = state.get("mode", "qa")
+
+    if mode == "agent":
+        # 工具绑定版本
+        llm = llm.bind_tools(builtin_tools)
+        # ... 工具调用循环
+    else:
+        # 无工具绑定版本
+        # ... 直接生成回答
+```
 
 ---
 
 ## 与 MCP 工具的区别
 
-| 维度 | MCP 工具 | Skill |
-|------|----------|-------|
-| 用途 | 获取外部数据（新闻等） | 指导模型执行任务 |
-| 注入方式 | MCP 结果直接返回 | skill_context 注入 system prompt |
-| 触发 | `classify_intent` | `match_skill` |
-| 执行 | 同步调用后进入 generate_response | 先 activate_skill 再进入 generate_response |
+| 维度 | MCP 工具（QA 模式） | 内置工具（Agent 模式） |
+|------|---------------------|------------------------|
+| 用途 | 获取外部数据（新闻等） | 文件操作、脚本执行 |
+| 触发 | `classify_intent` 检测 | 模型自主决定 |
+| 调用方式 | 意图识别后执行 | Tool Calling 循环 |
+| 注入方式 | MCP 结果直接返回 | 工具结果反馈给模型 |
 
 ---
 
 ## 配置变更记录
 
-### 2026-03-22 优化
+### 2026-03-22 两个独立 Graph 架构
 
-**问题**：原实现在 system_prompt 中预埋所有 Skill 列表，导致：
-- 任何对话都会提及 Skill
-- 几十个 Skill 时 prompt 爆炸
-- 模型被训练成"主动提示用户有 Skill"
+**问题**：原方案使用单一 Graph + 条件路由，导致状态机混乱，无法正常工作。
 
-**优化方案**：
-1. `match_skill` 改用 LLM 判断意图（与 `classify_intent` 一致）
-2. 删除 system_prompt 预埋的 Skill 列表
-3. 只在匹配到 Skill 时才加载对应上下文
-4. 支持询问 Skill 列表的场景
+**解决方案**：
+1. 创建两个独立的 Graph：`build_qa_graph()` 和 `build_agent_graph()`
+2. `stream_graph()` 根据 mode 动态选择使用哪个 Graph
+3. 删除了 `route_by_mode` 节点和 `should_use_tool`/`should_use_skill` 的跨模式路由
 
 **修改文件**：
-- `agent.py`：重写 `node_match_skill`，新增 `detect_skill_intent`、`build_skills_schema`
+- `agent.py`：新增 `build_qa_graph()` 和 `build_agent_graph()`，修改 `stream_graph()` 和 `run_graph()`
 
-### 2026-03-22 重命名
+### 2026-03-22 QA/Agent 模式分离
 
-**优化节点命名**，提高可读性：
+**改动**：
+1. 新增 `mode` 字段到 `GraphState`
+2. QA 模式：跳过 Skill 相关节点，不绑定工具
+3. Agent 模式：跳过 MCP 工具，不注入文档上下文
+4. Agent 模式 `generate_response` 绑定内置工具，支持工具调用循环
 
-| 原名称 | 新名称 |
-|--------|--------|
-| `detect_tool` | `classify_intent` |
-| `detect_skill` | `match_skill` |
-| `load_skill` | `activate_skill` |
-| `retrieve_document` | `retrieve_docs` |
-| `generate` | `generate_response` |
+**修改文件**：
+- `graph.py`：新增 `mode` 字段
+- `agent.py`：`generate_response` 根据 mode 选择逻辑
+- `routes.py`：传递 `mode` 参数
+- `utils.py`：`generate_answer` 支持 `mode` 参数
+
+### 2026-03-22 Skill 本质重新定义
+
+**核心理念**：Skill 的本质是"教 AI 怎么做事的说明书"，不是可执行代码，也不是工具调用手册。
+
+| 层级 | Claude Code 设计 | myOllama2 实现 |
+|------|------------------|----------------|
+| **知识层** | SKILL.md - 工作流指南 | 保持一致 |
+| **工具层** | Read/Edit/Bash 等内置工具 | 内置工具始终可用 |
+| **连接层** | LangGraph | 复用 |

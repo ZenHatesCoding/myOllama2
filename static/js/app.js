@@ -472,7 +472,8 @@ function sendMessage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             query, 
-            model: currentModel
+            model: currentModel,
+            mode: document.getElementById('modeSelect').value
         })
     })
         .then(response => response.json())
