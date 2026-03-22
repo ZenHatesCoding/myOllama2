@@ -1253,6 +1253,7 @@ function reloadConfig() {
 
 function openConfigModal() {
     document.getElementById('configModal').classList.add('show');
+    loadSkills();
 }
 
 function closeConfigModal() {
@@ -1396,6 +1397,64 @@ function saveConfig() {
             console.error('保存配置失败:', error);
             alert('保存配置失败');
         });
+}
+
+function loadSkills() {
+    const skillList = document.getElementById('skillList');
+    if (!skillList) return;
+
+    fetch('/api/skills')
+        .then(response => response.json())
+        .then(data => {
+            if (data.skills && data.skills.length > 0) {
+                skillList.innerHTML = data.skills.map(skill => `
+                    <div class="skill-item">
+                        <div class="skill-name">${escapeHtml(skill.name)}</div>
+                        <div class="skill-desc">${escapeHtml(skill.description)}</div>
+                        <div class="skill-meta">
+                            ${skill.has_scripts ? '📜 有脚本' : ''}
+                            ${skill.has_references ? '📚 有参考文档' : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                skillList.innerHTML = '<div class="skill-empty">暂无已安装的 Skill<br><small>将 Skill 文件夹放入 skills/ 目录即可自动加载</small></div>';
+            }
+        })
+        .catch(error => {
+            console.error('加载 Skill 列表失败:', error);
+            skillList.innerHTML = '<div class="skill-empty">加载失败</div>';
+        });
+}
+
+function reloadSkills() {
+    const skillList = document.getElementById('skillList');
+    if (skillList) {
+        skillList.innerHTML = '<div class="skill-loading">重新加载中...</div>';
+    }
+
+    fetch('/api/skills/reload', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                loadSkills();
+                alert(data.message);
+            } else {
+                alert('重新加载失败: ' + data.error);
+                loadSkills();
+            }
+        })
+        .catch(error => {
+            console.error('重新加载 Skill 失败:', error);
+            alert('重新加载失败');
+            loadSkills();
+        });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function updateSpeechRecognitionLang(lang) {

@@ -17,6 +17,9 @@ class GraphState(TypedDict):
     document_context: str
     disclosure_level: str
     history_context: str
+    target_skill: Optional[str]
+    skill_params: Optional[dict]
+    skill_context: Optional[str]
 
 
 DISCLOSURE_LEVELS = {
@@ -50,5 +53,8 @@ def create_initial_state(query: str, model_name: str = "qwen3.5:4b", images: Lis
         "conversation_id": "",
         "has_document": False,
         "document_context": "",
-        "disclosure_level": "relevant"
+        "disclosure_level": "relevant",
+        "target_skill": None,
+        "skill_params": None,
+        "skill_context": None
     }

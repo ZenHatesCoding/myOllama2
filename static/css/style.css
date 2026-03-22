@@ -636,6 +636,8 @@ body {
     border-radius: 12px;
     max-width: 400px;
     width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .modal-content h2 {
@@ -805,6 +807,76 @@ body {
 
 .typing-indicator span:nth-child(2) {
     animation-delay: 0.2s;
+}
+
+.skill-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 10px;
+    background: #f8f9fa;
+    margin-bottom: 10px;
+}
+
+.skill-loading {
+    color: #666;
+    font-size: 0.9em;
+    text-align: center;
+    padding: 10px;
+}
+
+.skill-item {
+    padding: 10px;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.skill-item:last-child {
+    margin-bottom: 0;
+}
+
+.skill-item .skill-name {
+    font-weight: 600;
+    font-size: 0.95em;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.skill-item .skill-desc {
+    font-size: 0.85em;
+    color: #666;
+    line-height: 1.4;
+}
+
+.skill-item .skill-meta {
+    font-size: 0.75em;
+    color: #999;
+    margin-top: 4px;
+}
+
+.skill-empty {
+    color: #999;
+    font-size: 0.9em;
+    text-align: center;
+    padding: 15px;
+}
+
+.reload-skills-btn {
+    padding: 8px 15px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s;
+}
+
+.reload-skills-btn:hover {
+    background: #5568d3;
 }
 
 .typing-indicator span:nth-child(3) {

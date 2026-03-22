@@ -5,6 +5,7 @@
 ## 功能特性
 
 ### 核心功能
+- **Skill 支持**：标准格式的 Skill 系统，自动注册，即插即用
 - **文档渐进式披露问答**：上传文档后，系统根据问题类型智能决定披露层级（摘要/相关片段/完整内容）
 - **多文档格式支持**：PDF、Word (.docx)、纯文本
 - **图片上传**：支持图片上传和多模态问答，支持拖拽上传
@@ -82,16 +83,53 @@ python app.py
 ┌─────────────────────────────────────────────────────────────────┐
 │                    LangGraph Agent (agent.py)                    │
 │                                                                  │
-│  ┌──────────────┐    ┌─────────────────┐    ┌────────────┐     │
-│  │ detect_tool  │───▶│ retrieve_document │───▶│  generate  │     │
-│  │  (工具检测)   │    │    (文档检索)     │    │  (生成回答)  │     │
-│  └──────────────┘    └─────────────────┘    └────────────┘     │
-│         │                                              │         │
-│         ▼                                              ▼         │
-│  ┌──────────────┐                           ┌────────────┐     │
-│  │ MCP Tools    │                           │  SSE Stream│     │
-│  │ (新闻/文档)  │                           │            │     │
-│  └──────────────┘                           └────────────┘     │
+│  ┌──────────────┐                                               │
+│  │ detect_tool │ ←── 入口：检测是否需要 MCP 工具               │
+│  └──────┬───────┘                                               │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │              should_use_tool 决策                         │    │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐   │    │
+│  │  │ target_skill│  │  mcp_result │  │   其他        │   │    │
+│  │  │   已设置     │  │   已设置     │  │              │   │    │
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘   │    │
+│  └─────────┼────────────────┼────────────────┼────────────┘    │
+│            ▼                ▼                ▼                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
+│  │ load_skill  │  │   generate   │  │ detect_skill │        │
+│  │ (加载 Skill) │  │ (MCP 结果)   │  │ (检测 Skill) │        │
+│  └──────┬───────┘  └──────────────┘  └──────┬───────┘        │
+│         │                                      │                 │
+│         │              ┌──────────────────────┼────────────┐    │
+│         │              ▼                      ▼            │    │
+│         │       ┌─────────────────────────────────────┐   │    │
+│         │       │        should_use_skill 决策          │   │    │
+│         │       │  ┌─────────────┐  ┌─────────────┐   │   │    │
+│         │       │  │target_skill │  │   其他      │   │   │    │
+│         │       │  │  已设置     │  │             │   │   │    │
+│         │       │  └──────┬─────┘  └──────┬──────┘   │   │    │
+│         │       └─────────┼───────────────┼──────────┘   │    │
+│         │                 ▼               ▼                │    │
+│         │          ┌────────────┐  ┌──────────────┐     │    │
+│         │          │load_skill  │  │retrieve_doc  │     │    │
+│         │          └─────┬──────┘  └──────┬───────┘     │    │
+│         │                │                │              │    │
+│         │                └────────┬───────┘              │    │
+│         │                         ▼                      │    │
+│         │                  ┌──────────────┐              │    │
+│         │                  │retrieve_hist │              │    │
+│         │                  └──────┬───────┘              │    │
+│         │                         ▼                      │    │
+│         │                  ┌──────────────┐              │    │
+│         └─────────────────▶│   generate  │◀─────────────┘    │
+│                            │ (Skill/MCP/ │                  │
+│                            │  Doc/Chat)  │                  │
+│                            └──────┬───────┘                  │
+│                                   ▼                           │
+│                            ┌──────────────┐                   │
+│                            │  SSE Stream  │                   │
+│                            └──────────────┘                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,32 +138,53 @@ python app.py
 项目采用 **LangGraph** 实现状态化的工作流，每个请求都会经过以下节点：
 
 ```python
-# 简化的工作流定义 (agent.py)
 graph = StateGraph(GraphState)
 
-graph.add_node("detect_tool", node_detect_tool)      # 检测是否需要工具
+graph.add_node("detect_tool", node_detect_tool)      # 检测 MCP 工具
+graph.add_node("detect_skill", node_detect_skill)    # 检测 Skill 意图
+graph.add_node("load_skill", node_load_skill)        # 加载 Skill 上下文
 graph.add_node("retrieve_document", node_retrieve_document)  # 文档检索
+graph.add_node("retrieve_history", node_retrieve_history)    # 历史检索
 graph.add_node("generate", node_generate)            # LLM 生成回答
 
 graph.set_entry_point("detect_tool")
 
-# 条件边：根据是否有工具结果决定下一步
 graph.add_conditional_edges("detect_tool", should_use_tool, {
-    "generate": "generate",           # 有工具结果 → 直接生成
-    "retrieve_document": "retrieve_document"  # 无工具结果 → 检索文档
+    "load_skill": "load_skill",           # Skill 已触发
+    "generate": "generate",               # MCP 工具结果
+    "detect_skill": "detect_skill"       # 进入 Skill 检测
 })
 
-graph.add_edge("retrieve_document", "generate")  # 检索后生成
+graph.add_conditional_edges("detect_skill", should_use_skill, {
+    "load_skill": "load_skill",           # Skill 意图匹配
+    "retrieve_document": "retrieve_document"  # 普通文档问答
+})
+
+graph.add_edge("load_skill", "generate")
+graph.add_edge("retrieve_document", "retrieve_history")
+graph.add_edge("retrieve_history", "generate")
 graph.add_edge("generate", END)
 ```
 
 **节点说明**：
 
-| 节点 | 功能 | 决策依据 |
-|------|------|---------|
-| `detect_tool` | 意图识别 + 工具调用 | 检测问题是否需要 MCP 工具 |
-| `retrieve_document` | 向量检索 / 直接加载 | Ollama 用 FAISS，API 模式直接取文档块 |
-| `generate` | LLM 生成回答 | 整合工具结果 + 文档上下文 |
+| 节点 | 功能 | 说明 |
+|------|------|------|
+| `detect_tool` | 意图识别 | 检测是否需要 MCP 工具（新闻等） |
+| `detect_skill` | Skill 检测 | 检测是否触发某个 Skill |
+| `load_skill` | 加载 Skill | 加载 Skill 的完整内容和工具 |
+| `retrieve_document` | 文档检索 | RAG 向量检索 + 渐进式披露 |
+| `retrieve_history` | 历史检索 | 语义检索相关历史对话 |
+| `generate` | 生成回答 | 整合 Skill/MCP/文档/历史上下文 |
+
+**四种对话模式**：
+
+| 模式 | 触发条件 | 上下文 |
+|------|----------|--------|
+| **Skill 模式** | 用户请求匹配 Skill description | Skill 内容 + 内置工具 |
+| **MCP 模式** | 用户请求需要新闻等工具 | MCP 工具结果 |
+| **文档模式** | 上传文档后的问答 | RAG 检索结果 + 渐进式披露 |
+| **普通对话** | 其他情况 | 历史对话 + Skill 列表（始终可用） |
 
 ### 渐进式披露设计
 
@@ -268,6 +327,58 @@ class WeatherMCP(BaseMCP):
 mcp_manager.register_mcp(WeatherMCP())
 ```
 
+### Skill 系统
+
+项目支持 **标准格式的 Skill**（参考 Claude Code / OpenCode 规范），实现 Skill 的即插即用。
+
+#### Skill 目录结构
+
+```
+skills/                      # Skill 根目录
+├── skill-name/              # Skill 目录（必须与 SKILL.md 中的 name 一致）
+│   ├── SKILL.md             # 核心文件（必须）
+│   ├── scripts/             # 可选：可执行脚本
+│   ├── references/          # 可选：参考文档
+│   └── assets/              # 可选：模板等资源
+└── another-skill/
+    └── SKILL.md
+```
+
+#### SKILL.md 格式
+
+采用 **Markdown + YAML Frontmatter** 标准格式：
+
+```yaml
+---
+name: pdf-to-org
+description: 将 PDF 论文转换为 Org 格式进行分析。当你需要分析论文时使用。
+---
+
+# PDF to Org 转换
+
+## 使用方法
+
+### 步骤 1：读取 PDF
+使用 Read 工具读取 PDF 文件...
+
+### 步骤 2：执行转换
+...
+```
+
+#### 内置 Skill 工具
+
+| 工具 | 功能 |
+|------|------|
+| `Read` | 读取文件内容 |
+| `Write` | 写入文件 |
+| `Bash` | 执行脚本 |
+| `Glob` | 文件搜索 |
+| `Grep` | 内容搜索 |
+
+#### 添加新 Skill
+
+将 Skill 文件夹放入 `skills/` 目录，系统启动时自动注册。无需修改代码。
+
 ### 上下文加载策略
 
 ```
@@ -278,16 +389,18 @@ mcp_manager.register_mcp(WeatherMCP())
 │                    上下文构建流程                             │
 ├─────────────────────────────────────────────────────────────┤
 │  1. System Prompt (指定角色和回答规则)                      │
-│  2. 对话摘要 (对话轮数 > 5 时生成)                          │
-│  3. 历史对话 RAG (语义检索相关片段)                         │
-│  4. 文档上下文 (根据 disclosure_level 加载)                 │
-│  5. 最近对话 (滑动窗口，默认 5 轮)                           │
-│  6. 当前问题                                                │
+│  2. Skill 列表 (始终包含，模型自行判断是否触发)             │
+│  3. 对话摘要 (对话轮数 > 5 时生成)                          │
+│  4. 历史对话 RAG (语义检索相关片段)                         │
+│  5. 文档上下文 (根据 disclosure_level 加载)                 │
+│  6. 最近对话 (滑动窗口，默认 5 轮)                           │
+│  7. 当前问题                                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 | 来源 | 策略 | 参数 |
 |------|------|------|
+| Skill 列表 | 始终注入 | 模型自行判断触发 |
 | 对话摘要 | LLM 压缩 | 轮数 > 5 时生成 |
 | 历史 RAG | FAISS 检索 / LLM 选择 | Ollama: k=3, API: LLM 判断 |
 | 文档 | 渐进式披露 | 根据问题类型 |
@@ -326,6 +439,19 @@ myOllama/
 - **前端**: 原生 HTML/CSS/JavaScript
 
 ## 更新日志
+
+### v8.0.0
+
+- **Skill 系统**
+  - 标准 Skill 格式支持（Markdown + YAML Frontmatter）
+  - 自动发现与注册，无需修改代码
+  - 内置文件读写、脚本执行工具（Read/Write/Bash/Glob/Grep）
+  - Skill 触发检测与渐进式上下文注入
+  - 所有对话模式统一 system_prompt，模型自行判断触发
+
+- **前端 Skill 管理**
+  - 配置面板显示已注册 Skill 列表
+  - 手动重新加载 Skill
 
 ### v7.2.0
 - **多端点支持**

@@ -4,6 +4,7 @@ import tempfile
 import queue
 from flask import request, jsonify, Response, render_template
 from extensions import state
+from skill_registry import skill_registry
 from utils import (
     load_document, process_document, generate_summary,
     process_image, encode_image_to_base64, prepare_messages,
@@ -741,3 +742,41 @@ def register_routes(app):
                 })
 
         return jsonify({'success': False, 'error': '端点不存在'}), 404
+
+
+    @app.route('/api/skills', methods=['GET'])
+    def get_skills():
+        skills = skill_registry.get_all_skills()
+        return jsonify({
+            'skills': [skill.to_dict() for skill in skills],
+            'count': len(skills)
+        })
+
+
+    @app.route('/api/skills/reload', methods=['POST'])
+    def reload_skills():
+        try:
+            skill_registry.reload()
+            skills = skill_registry.get_all_skills()
+            return jsonify({
+                'success': True,
+                'message': f'成功加载 {len(skills)} 个 Skill',
+                'skills': [skill.to_dict() for skill in skills]
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+
+    @app.route('/api/skills/<skill_name>', methods=['GET'])
+    def get_skill_detail(skill_name):
+        skill = skill_registry.get_skill(skill_name)
+        if not skill:
+            return jsonify({'error': 'Skill 不存在'}), 404
+
+        return jsonify({
+            'name': skill.name,
+            'description': skill.description,
+            'has_scripts': skill.has_scripts(),
+            'has_references': skill.has_references(),
+            'content': skill.get_full_content()
+        })

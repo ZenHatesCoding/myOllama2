@@ -11,6 +11,7 @@ from tools import get_all_tools, news_toolkit
 from document_tools import document_tools, get_document_summary, get_document_outline
 from extensions import state
 from llm_factory import create_llm
+from skill_registry import skill_registry
 
 
 def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str, Any]]:
@@ -269,6 +270,7 @@ def node_generate(state: GraphState) -> dict:
     has_document = state.get("has_document", False)
     document_context = state.get("document_context", "")
     history_context = state.get("history_context", "")
+    skill_context = state.get("skill_context")
     
     news_tools = ["get_headlines", "get_news_by_type", "search_news"]
     document_tools_list = ["get_document_summary", "get_document_outline"]
@@ -328,45 +330,32 @@ def node_generate(state: GraphState) -> dict:
         )
     
     conversation = app_state.get_current_conversation()
+    skills_info = skill_registry.get_trigger_info()
+    skill_instruction = f"\n\n【可用 Skill 列表】\n{skills_info}\n\n当用户请求与某 Skill 描述相符时，请告知用户该 Skill 已加载并可使用。" if skills_info else ""
     
-    if has_document and document_context:
-        system_prompt = f"""你是一个专业的文档助手。
-你的任务是根据下面提供的文档内容，回答用户的问题。
+    if skill_context:
+        system_prompt = f"""{skill_context}{skill_instruction}
 
-【用户问题】
-{query}
-
-【文档内容】
-{document_context}
-
-【回答要求】
-1. 直接基于文档内容回答，不要复述上述指令
-2. 用户用什么语言提问，你就用什么语言回答
-3. 如果文档中没有相关信息，请如实说明
-4. 回答要简洁、有条理
-
-请开始回答："""
-    elif history_context:
-        system_prompt = f"""你是一个专业、友好的AI助手。
-请根据对话历史和当前上下文回答用户的问题。
-
-【用户问题】
-{query}
-
-【历史对话上下文】
-{history_context}
-
-【回答要求】
-1. 结合历史对话和当前问题回答
-2. 用户用什么语言提问，你就用什么语言回答
-3. 回答要简洁、有条理
+请根据上述 Skill 指导完成任务，完成后向用户报告结果。
 
 请开始回答："""
     else:
-        system_prompt = """你是一个专业、友好的AI助手。
-请根据对话历史和上下文回答用户的问题。
-用户用什么语言提问，你就用什么语言回答。
-保持简洁、有条理。"""
+        context_parts = []
+        if has_document and document_context:
+            context_parts.append(f"【文档内容】\n{document_context}")
+        if history_context:
+            context_parts.append(f"【历史对话上下文】\n{history_context}")
+        context_str = "\n\n".join(context_parts) if context_parts else ""
+        
+        system_prompt = f"""你是一个专业、友好的AI助手。
+请根据以下信息回答用户的问题。
+{context_str}{skill_instruction}
+
+【回答要求】
+1. 用户用什么语言提问，你就用什么语言回答
+2. 回答要简洁、有条理
+
+请开始回答："""
     
     from utils import prepare_messages
     messages = prepare_messages(conversation, query, system_prompt, images if images else None)
@@ -394,16 +383,66 @@ def node_generate(state: GraphState) -> dict:
 
 
 def should_use_tool(state: GraphState) -> str:
+    target_skill = state.get("target_skill")
     mcp_result = state.get("mcp_result")
-    if mcp_result and mcp_result.get("success"):
+    
+    if target_skill:
+        return "load_skill"
+    elif mcp_result and mcp_result.get("success"):
         return "generate"
+    return "detect_skill"
+
+
+def should_use_skill(state: GraphState) -> str:
+    target_skill = state.get("target_skill")
+    if target_skill:
+        return "load_skill"
     return "retrieve_document"
+
+
+def node_detect_skill(state: GraphState) -> dict:
+    if state.get("should_stop"):
+        return {}
+    
+    query = state.get("query", "")
+    if not query:
+        return {"target_skill": None}
+    
+    skills = skill_registry.get_all_skills()
+    query_lower = query.lower()
+    
+    for skill in skills:
+        desc_lower = skill.description.lower()
+        if any(keyword in query_lower for keyword in desc_lower.split()[:5]):
+            return {"target_skill": skill.name}
+    
+    return {"target_skill": None}
+
+
+def node_load_skill(state: GraphState) -> dict:
+    if state.get("should_stop"):
+        return {}
+    
+    target_skill = state.get("target_skill")
+    if not target_skill:
+        return {"skill_context": None}
+    
+    skill = skill_registry.get_skill(target_skill)
+    if not skill:
+        return {"skill_context": None}
+    
+    skill_content = skill.get_full_content()
+    skill_context = f"【激活 Skill: {skill.name}】\n\n{skill_content}"
+    
+    return {"skill_context": skill_context}
 
 
 def build_graph():
     graph = StateGraph(GraphState)
     
     graph.add_node("detect_tool", node_detect_tool)
+    graph.add_node("detect_skill", node_detect_skill)
+    graph.add_node("load_skill", node_load_skill)
     graph.add_node("retrieve_document", node_retrieve_document)
     graph.add_node("retrieve_history", node_retrieve_history)
     graph.add_node("generate", node_generate)
@@ -414,11 +453,22 @@ def build_graph():
         "detect_tool",
         should_use_tool,
         {
+            "load_skill": "load_skill",
             "generate": "generate",
+            "detect_skill": "detect_skill"
+        }
+    )
+    
+    graph.add_conditional_edges(
+        "detect_skill",
+        should_use_skill,
+        {
+            "load_skill": "load_skill",
             "retrieve_document": "retrieve_document"
         }
     )
     
+    graph.add_edge("load_skill", "generate")
     graph.add_edge("retrieve_document", "retrieve_history")
     graph.add_edge("retrieve_history", "generate")
     graph.add_edge("generate", END)

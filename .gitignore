@@ -34,3 +34,8 @@ conversations/index.json
 assets/
 vector_stores/
 config.json
+workspace/
+output/
+skills/*
+!skills/pdf-to-org
+!skills/code-review
