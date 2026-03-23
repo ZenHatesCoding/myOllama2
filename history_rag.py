@@ -1,7 +1,5 @@
 import os
-import json
-from typing import List, Dict, Optional, Any
-from datetime import datetime
+from typing import List, Dict, Optional
 from langchain_community.vectorstores import FAISS
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
@@ -72,7 +70,7 @@ class HistoryRAG:
                 else:
                     self.vector_store.merge_from(new_store)
                 
-                self.conversation_blocks[conversation_id] = blocks
+                self.conversation_blocks[conversation_id] = documents
                 
                 return True
         except Exception as e:
@@ -85,7 +83,6 @@ class HistoryRAG:
         conversations = conversation_manager.get_all_conversations()
         
         all_documents = []
-        blocks = {}
         
         for conv in conversations:
             conv_id = conv["id"]
@@ -95,6 +92,7 @@ class HistoryRAG:
                 continue
             
             messages = conv_data["messages"]
+            conv_documents = []
             
             for idx, msg in enumerate(messages):
                 if msg.get("role") == "user":
@@ -122,9 +120,10 @@ class HistoryRAG:
                             }
                         )
                         all_documents.append(doc)
+                        conv_documents.append(doc)
             
-            if all_documents:
-                blocks[conv_id] = all_documents.copy()
+            if conv_documents:
+                self.conversation_blocks[conv_id] = conv_documents
         
         if all_documents:
             try:
