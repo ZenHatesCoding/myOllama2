@@ -7,11 +7,11 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
 
 from graph import GraphState, create_initial_state
-from tools import get_all_tools, news_toolkit
-from document_tools import document_tools, get_document_summary, get_document_outline
+from tools.news import get_all_tools, news_toolkit
+from tools import get_builtin_tools
+from tools.document import document_tools, get_document_summary, get_document_outline
 from extensions import state
 from llm_factory import create_llm
-from builtin_tools import get_builtin_tools
 from skill_registry import skill_registry
 
 
