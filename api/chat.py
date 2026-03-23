@@ -84,8 +84,8 @@ def status():
     conv = state.get_current_conversation()
     return jsonify({
         'is_generating': state.is_generating,
-        'has_document': conv.vector_store is not None,
-        'current_document': conv.document_file,
-        'message_count': len(conv.messages),
+        'has_document': conv.vector_store is not None if conv else False,
+        'current_document': conv.document_file if conv else None,
+        'message_count': len(conv.messages) if conv else 0,
         'max_context_turns': state.max_context_turns
     })
