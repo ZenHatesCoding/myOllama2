@@ -109,16 +109,26 @@ def get_openai_endpoints():
 def add_openai_endpoint():
     data = request.json
     endpoint_name = data.get('name')
-    endpoint_url = data.get('url')
+    endpoint_url = data.get('base_url') or data.get('url')
+    endpoint_api_key = data.get('api_key', '')
+    endpoint_models = data.get('models', [])
     endpoint_model = data.get('model')
 
     if not endpoint_name or not endpoint_url:
         return jsonify({'error': '端点名称和URL不能为空'}), 400
 
-    state.openai_endpoints[endpoint_name] = {
-        'url': endpoint_url,
-        'model': endpoint_model or endpoint_name
+    if not isinstance(state.openai_endpoints, list):
+        state.openai_endpoints = []
+
+    endpoint = {
+        'name': endpoint_name,
+        'base_url': endpoint_url,
+        'api_key': endpoint_api_key,
+        'models': endpoint_models if endpoint_models else [endpoint_model] if endpoint_model else [],
+        'is_default': False
     }
+
+    state.openai_endpoints.append(endpoint)
 
     config = load_config()
     config['openai_endpoints'] = state.openai_endpoints
@@ -132,17 +142,32 @@ def add_openai_endpoint():
 
 @config_bp.route('/openai/endpoints/<endpoint_name>', methods=['PUT'])
 def update_openai_endpoint(endpoint_name):
-    if endpoint_name not in state.openai_endpoints:
+    if not isinstance(state.openai_endpoints, list):
+        state.openai_endpoints = []
+
+    endpoint_index = None
+    for i, ep in enumerate(state.openai_endpoints):
+        if ep.get('name') == endpoint_name:
+            endpoint_index = i
+            break
+
+    if endpoint_index is None:
         return jsonify({'error': '端点不存在'}), 404
 
     data = request.json
-    endpoint_url = data.get('url')
+    endpoint_url = data.get('base_url') or data.get('url')
+    endpoint_api_key = data.get('api_key')
+    endpoint_models = data.get('models')
     endpoint_model = data.get('model')
 
     if endpoint_url:
-        state.openai_endpoints[endpoint_name]['url'] = endpoint_url
-    if endpoint_model:
-        state.openai_endpoints[endpoint_name]['model'] = endpoint_model
+        state.openai_endpoints[endpoint_index]['base_url'] = endpoint_url
+    if endpoint_api_key is not None:
+        state.openai_endpoints[endpoint_index]['api_key'] = endpoint_api_key
+    if endpoint_models is not None:
+        state.openai_endpoints[endpoint_index]['models'] = endpoint_models
+    if endpoint_model is not None:
+        state.openai_endpoints[endpoint_index]['model'] = endpoint_model
 
     config = load_config()
     config['openai_endpoints'] = state.openai_endpoints
@@ -156,10 +181,19 @@ def update_openai_endpoint(endpoint_name):
 
 @config_bp.route('/openai/endpoints/<endpoint_name>', methods=['DELETE'])
 def delete_openai_endpoint(endpoint_name):
-    if endpoint_name not in state.openai_endpoints:
+    if not isinstance(state.openai_endpoints, list):
+        state.openai_endpoints = []
+
+    endpoint_index = None
+    for i, ep in enumerate(state.openai_endpoints):
+        if ep.get('name') == endpoint_name:
+            endpoint_index = i
+            break
+
+    if endpoint_index is None:
         return jsonify({'error': '端点不存在'}), 404
 
-    del state.openai_endpoints[endpoint_name]
+    del state.openai_endpoints[endpoint_index]
 
     if state.openai_current_endpoint == endpoint_name:
         state.openai_current_endpoint = None
@@ -183,12 +217,29 @@ def delete_openai_endpoint(endpoint_name):
 def switch_openai_endpoint():
     data = request.json
     endpoint_name = data.get('endpoint')
+    model = data.get('model')
 
-    if endpoint_name not in state.openai_endpoints:
+    if not isinstance(state.openai_endpoints, list):
+        state.openai_endpoints = []
+
+    endpoint = None
+    for ep in state.openai_endpoints:
+        if ep.get('name') == endpoint_name:
+            endpoint = ep
+            break
+
+    if not endpoint:
         return jsonify({'error': '端点不存在'}), 404
 
     state.openai_current_endpoint = endpoint_name
-    state.openai_current_model = state.openai_endpoints[endpoint_name]['model']
+    models = endpoint.get('models', [])
+    
+    if model and model in models:
+        state.openai_current_model = model
+    elif models:
+        state.openai_current_model = models[0]
+    else:
+        state.openai_current_model = endpoint.get('model', '')
 
     config = load_config()
     config['openai_current_endpoint'] = state.openai_current_endpoint
@@ -215,16 +266,26 @@ def get_anthropic_endpoints():
 def add_anthropic_endpoint():
     data = request.json
     endpoint_name = data.get('name')
-    endpoint_url = data.get('url')
+    endpoint_url = data.get('base_url') or data.get('url')
+    endpoint_api_key = data.get('api_key', '')
+    endpoint_models = data.get('models', [])
     endpoint_model = data.get('model')
 
     if not endpoint_name or not endpoint_url:
         return jsonify({'error': '端点名称和URL不能为空'}), 400
 
-    state.anthropic_endpoints[endpoint_name] = {
-        'url': endpoint_url,
-        'model': endpoint_model or endpoint_name
+    if not isinstance(state.anthropic_endpoints, list):
+        state.anthropic_endpoints = []
+
+    endpoint = {
+        'name': endpoint_name,
+        'base_url': endpoint_url,
+        'api_key': endpoint_api_key,
+        'models': endpoint_models if endpoint_models else [endpoint_model] if endpoint_model else [],
+        'is_default': False
     }
+
+    state.anthropic_endpoints.append(endpoint)
 
     config = load_config()
     config['anthropic_endpoints'] = state.anthropic_endpoints
@@ -238,17 +299,32 @@ def add_anthropic_endpoint():
 
 @config_bp.route('/anthropic/endpoints/<endpoint_name>', methods=['PUT'])
 def update_anthropic_endpoint(endpoint_name):
-    if endpoint_name not in state.anthropic_endpoints:
+    if not isinstance(state.anthropic_endpoints, list):
+        state.anthropic_endpoints = []
+
+    endpoint_index = None
+    for i, ep in enumerate(state.anthropic_endpoints):
+        if ep.get('name') == endpoint_name:
+            endpoint_index = i
+            break
+
+    if endpoint_index is None:
         return jsonify({'error': '端点不存在'}), 404
 
     data = request.json
-    endpoint_url = data.get('url')
+    endpoint_url = data.get('base_url') or data.get('url')
+    endpoint_api_key = data.get('api_key')
+    endpoint_models = data.get('models')
     endpoint_model = data.get('model')
 
     if endpoint_url:
-        state.anthropic_endpoints[endpoint_name]['url'] = endpoint_url
-    if endpoint_model:
-        state.anthropic_endpoints[endpoint_name]['model'] = endpoint_model
+        state.anthropic_endpoints[endpoint_index]['base_url'] = endpoint_url
+    if endpoint_api_key is not None:
+        state.anthropic_endpoints[endpoint_index]['api_key'] = endpoint_api_key
+    if endpoint_models is not None:
+        state.anthropic_endpoints[endpoint_index]['models'] = endpoint_models
+    if endpoint_model is not None:
+        state.anthropic_endpoints[endpoint_index]['model'] = endpoint_model
 
     config = load_config()
     config['anthropic_endpoints'] = state.anthropic_endpoints
@@ -262,10 +338,19 @@ def update_anthropic_endpoint(endpoint_name):
 
 @config_bp.route('/anthropic/endpoints/<endpoint_name>', methods=['DELETE'])
 def delete_anthropic_endpoint(endpoint_name):
-    if endpoint_name not in state.anthropic_endpoints:
+    if not isinstance(state.anthropic_endpoints, list):
+        state.anthropic_endpoints = []
+
+    endpoint_index = None
+    for i, ep in enumerate(state.anthropic_endpoints):
+        if ep.get('name') == endpoint_name:
+            endpoint_index = i
+            break
+
+    if endpoint_index is None:
         return jsonify({'error': '端点不存在'}), 404
 
-    del state.anthropic_endpoints[endpoint_name]
+    del state.anthropic_endpoints[endpoint_index]
 
     if state.anthropic_current_endpoint == endpoint_name:
         state.anthropic_current_endpoint = None
@@ -289,12 +374,29 @@ def delete_anthropic_endpoint(endpoint_name):
 def switch_anthropic_endpoint():
     data = request.json
     endpoint_name = data.get('endpoint')
+    model = data.get('model')
 
-    if endpoint_name not in state.anthropic_endpoints:
+    if not isinstance(state.anthropic_endpoints, list):
+        state.anthropic_endpoints = []
+
+    endpoint = None
+    for ep in state.anthropic_endpoints:
+        if ep.get('name') == endpoint_name:
+            endpoint = ep
+            break
+
+    if not endpoint:
         return jsonify({'error': '端点不存在'}), 404
 
     state.anthropic_current_endpoint = endpoint_name
-    state.anthropic_current_model = state.anthropic_endpoints[endpoint_name]['model']
+    models = endpoint.get('models', [])
+    
+    if model and model in models:
+        state.anthropic_current_model = model
+    elif models:
+        state.anthropic_current_model = models[0]
+    else:
+        state.anthropic_current_model = endpoint.get('model', '')
 
     config = load_config()
     config['anthropic_current_endpoint'] = state.anthropic_current_endpoint

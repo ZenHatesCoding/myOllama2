@@ -920,6 +920,30 @@ function onOpenaiEndpointChange() {
         document.getElementById('openaiEndpointKey').value = ep.api_key || '';
         document.getElementById('openaiEndpointModels').value = (ep.models || []).join(', ');
         showEditOpenaiEndpointForm();
+
+        const models = ep.models || [];
+        const model = models.length > 0 ? models[0] : '';
+
+        currentConfig.openai_current_endpoint = selectedName;
+        currentConfig.openai_current_model = model;
+        updateModelSelectForProvider();
+
+        fetch('/api/openai/switch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                endpoint: selectedName,
+                model: model
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentConfig.openai_current_endpoint = data.current_endpoint;
+                currentConfig.openai_current_model = data.current_model;
+            }
+        })
+        .catch(error => console.error('切换端点失败:', error));
     }
 }
 
@@ -976,7 +1000,7 @@ function saveOpenaiEndpoint() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                currentConfig.openai_endpoints[existingIndex] = data.endpoint;
+                currentConfig.openai_endpoints = data.endpoints;
                 loadOpenaiEndpoints(currentConfig);
                 hideOpenaiEndpointForm();
                 updateModelSelectForProvider();
@@ -997,10 +1021,7 @@ function saveOpenaiEndpoint() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                if (!currentConfig.openai_endpoints) {
-                    currentConfig.openai_endpoints = [];
-                }
-                currentConfig.openai_endpoints.push(data.endpoint);
+                currentConfig.openai_endpoints = data.endpoints;
                 currentConfig.openai_current_endpoint = name;
                 if (models.length > 0) {
                     currentConfig.openai_current_model = models[0];
@@ -1106,6 +1127,30 @@ function onAnthropicEndpointChange() {
         document.getElementById('anthropicEndpointKey').value = ep.api_key || '';
         document.getElementById('anthropicEndpointModels').value = (ep.models || []).join(', ');
         showEditEndpointForm();
+
+        const models = ep.models || [];
+        const model = models.length > 0 ? models[0] : '';
+
+        currentConfig.anthropic_current_endpoint = selectedName;
+        currentConfig.anthropic_current_model = model;
+        updateModelSelectForProvider();
+
+        fetch('/api/anthropic/switch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                endpoint: selectedName,
+                model: model
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentConfig.anthropic_current_endpoint = data.current_endpoint;
+                currentConfig.anthropic_current_model = data.current_model;
+            }
+        })
+        .catch(error => console.error('切换端点失败:', error));
     }
 }
 
