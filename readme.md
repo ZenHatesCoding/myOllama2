@@ -199,6 +199,8 @@ def stream_graph(query, model_name, images, mode):
 - 支持模型自主工具调用循环
 - Skill 上下文按需注入
 
+> **⚠️ 模型要求**：Agent 模式依赖模型的 **Tool Calling** 能力。请使用支持工具调用的模型（如 OpenAI GPT-4、Anthropic Claude、MiniMax 等）。部分本地部署模型可能不支持。
+
 ### 渐进式披露设计
 
 项目的核心创新：根据问题类型动态决定文档内容的披露层级。

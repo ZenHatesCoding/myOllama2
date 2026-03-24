@@ -612,6 +612,13 @@ stream_graph(query, mode)
 - **generate_response**：绑定 Read/Write/Bash/Glob/Grep 工具，模型自主决定工具调用
 - **适用场景**：Skill 调试、文件操作、脚本执行
 
+> **⚠️ 模型要求**：Agent 模式依赖模型的 **Tool Calling（工具调用）** 能力。模型需要在训练阶段具备工具调用能力，并返回标准化的结构化数据（包含 `type: "tool_use"` 等字段）。
+>
+> - **支持的模型**：OpenAI GPT-4/3.5、Anthropic Claude、MiniMax 等具备 Tool Calling 能力的模型
+> - **不支持的模型**：部分本地部署的模型（如某些 Ollama 模型）可能不具备工具调用能力，使用这些模型时 Agent 模式将无法正常工作
+>
+> 如遇 Agent 模式问题，请确认当前 provider 使用的模型是否支持 Tool Calling。
+
 ### 12.6 Agent 模式下的工具调用
 
 Agent 模式下，LLM 绑定内置工具后，模型自主决定何时调用工具：
