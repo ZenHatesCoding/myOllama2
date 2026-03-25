@@ -3,7 +3,7 @@ import os
 import tempfile
 import queue
 from flask import Blueprint, request, jsonify
-from extensions import state
+from core import state
 from utils import load_document, get_embedding_model
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS

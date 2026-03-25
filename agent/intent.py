@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from tools.news import get_all_tools
 from tools.document import document_tools
-from skill_registry import skill_registry
+from resources.skills import skill_registry
 
 
 def build_skills_schema() -> str:

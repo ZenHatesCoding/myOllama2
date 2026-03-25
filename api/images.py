@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 from flask import Blueprint, request, jsonify
-from extensions import state
+from core import state
 from utils import process_image, encode_image_to_base64
 
 images_bp = Blueprint('images', __name__)
@@ -72,7 +72,7 @@ def screenshot():
     conversation = state.get_current_conversation()
 
     try:
-        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'screenshot.py')
+        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'utils', 'screenshot.py')
 
         result = subprocess.run(
             [sys.executable, script_path],

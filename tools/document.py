@@ -1,5 +1,5 @@
 from langchain_core.tools import tool
-from resources import ResourceRegistry
+from resources.base import ResourceRegistry
 
 
 @tool

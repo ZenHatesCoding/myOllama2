@@ -1,7 +1,7 @@
 import os
 import json
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "..", "config.json")
 
 DEFAULT_CONFIG = {
     "llm_provider": "ollama",

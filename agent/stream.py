@@ -1,7 +1,7 @@
 from typing import List
-from graph import GraphState, create_initial_state
+from core.graph import GraphState, create_initial_state
 from agent.graph import build_qa_graph, build_agent_graph
-from extensions import state as app_state
+from core import state as app_state
 
 
 def run_graph(query: str, model_name: str = "qwen3.5:4b", images: List[dict] = None, mode: str = "qa") -> str:

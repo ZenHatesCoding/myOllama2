@@ -3,8 +3,8 @@ import uuid
 import copy
 import threading
 import queue
-from conversation_manager import conversation_manager
-from config_manager import load_config
+from storage.conversation import conversation_manager
+from config.manager import load_config
 
 
 class Message:
@@ -149,7 +149,7 @@ class AppState:
             self.current_conversation_id = persisted_convs[0]["id"]
         
         if self.llm_provider == "ollama":
-            from history_rag import history_rag
+            from storage.history_rag import history_rag
             history_rag.build_all_index()
 
     def create_conversation(self):
@@ -178,7 +178,7 @@ class AppState:
             
             conversation_manager.delete_conversation(conversation_id)
             if self.llm_provider == "ollama":
-                from history_rag import history_rag
+                from storage.history_rag import history_rag
                 history_rag.delete_conversation_index(conversation_id)
             
             if self.current_conversation_id == conversation_id:
@@ -198,64 +198,31 @@ class AppState:
             name=f"{source.name} (副本)"
         )
         new_conv_id = new_conv_data["id"]
-        
         new_conv = Conversation(conversation_id=new_conv_id)
-        new_conv.name = f"{source.name} (副本)"
-        new_conv.vector_store = source.vector_store
-        new_conv.document_file = source.document_file
+        new_conv.name = new_conv_data["name"]
         new_conv.images = copy.deepcopy(source.images)
-        new_conv.messages = copy.deepcopy(source.messages)
-        new_conv.summary = source.summary
         
-        for msg in new_conv.messages:
-            conversation_manager.append_message(
-                new_conv_id, 
-                msg.role, 
-                msg.content
-            )
+        for msg in source.messages:
+            new_conv.add_message(msg.role, msg.content, msg.images if hasattr(msg, 'images') else None)
         
         self.conversations[new_conv_id] = new_conv
-        self.current_conversation_id = new_conv_id
         
         return new_conv
-
-    def switch_conversation(self, conversation_id):
-        if conversation_id in self.conversations:
-            self.current_conversation_id = conversation_id
-            return True
-        
-        if conversation_manager.conversation_exists(conversation_id):
-            conv_data = conversation_manager.load_conversation(conversation_id)
-            if conv_data:
-                conv = Conversation(from_persisted=conv_data)
-                self.conversations[conversation_id] = conv
-                self.current_conversation_id = conversation_id
-                
-                if self.llm_provider == "ollama":
-                    from history_rag import history_rag
-                    history_rag.build_index(conversation_id)
-                
-                return True
-        
-        return False
 
     def persist_message(self, role: str, content: str, images=None):
         conv = self.get_current_conversation()
         conversation_manager.append_message(conv.id, role, content, images)
-        
-        if self.llm_provider == "ollama":
-            from history_rag import history_rag
-            history_rag.build_index(conv.id)
 
     def persist_conversation_name(self, name: str):
-        conv = self.get_current_conversation()
-        conv.name = name
-        conversation_manager.update_conversation_name(conv.id, name)
+        if self.current_conversation_id:
+            conversation_manager.update_conversation_name(self.current_conversation_id, name)
 
     def persist_summary(self, summary: str):
-        conv = self.get_current_conversation()
-        conv.summary = summary
-        conversation_manager.update_summary(conv.id, summary)
+        if self.current_conversation_id:
+            conversation_manager.update_summary(self.current_conversation_id, summary)
 
-
-state = AppState()
+    def switch_conversation(self, conversation_id: str):
+        if conversation_id in self.conversations:
+            self.current_conversation_id = conversation_id
+            return True
+        return False

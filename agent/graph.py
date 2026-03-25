@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from graph import GraphState
+from core.graph import GraphState
 from agent.nodes import (
     node_classify_intent,
     node_retrieve_docs,

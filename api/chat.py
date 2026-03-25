@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, Response, request
-from extensions import state
+from core import state
 import threading
 import asyncio
 

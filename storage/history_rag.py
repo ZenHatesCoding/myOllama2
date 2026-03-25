@@ -4,7 +4,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
 
-from conversation_manager import conversation_manager
+from storage.conversation import conversation_manager
 
 
 def get_embedding_model(base_url: str):
@@ -148,21 +148,21 @@ class HistoryRAG:
             return []
         
         try:
-            results = self.vector_store.similarity_search(query, k=k)
-            
-            formatted_results = []
-            for doc in results:
-                formatted_results.append({
+            docs = self.vector_store.similarity_search(query, k=k)
+            results = []
+            for doc in docs:
+                results.append({
                     "content": doc.page_content,
-                    "conversation_id": doc.metadata.get("conversation_id"),
-                    "user_idx": doc.metadata.get("user_idx"),
-                    "source": doc.metadata.get("source")
+                    "metadata": doc.metadata
                 })
-            
-            return formatted_results
+            return results
         except Exception as e:
             print(f"搜索失败: {str(e)}")
             return []
+    
+    def clear(self):
+        self.vector_store = None
+        self.conversation_blocks = {}
 
     def delete_conversation_index(self, conversation_id: str) -> bool:
         try:
@@ -176,7 +176,7 @@ class HistoryRAG:
     def save_index(self) -> bool:
         if self.vector_store is None:
             return False
-        
+
         try:
             os.makedirs(self.vector_store_path, exist_ok=True)
             self.vector_store.save_local(self.vector_store_path)
@@ -191,7 +191,7 @@ class HistoryRAG:
                 base_url = "http://localhost:11434"
                 embedding = get_embedding_model(base_url)
                 self.vector_store = FAISS.load_local(
-                    self.vector_store_path, 
+                    self.vector_store_path,
                     embedding,
                     allow_dangerous_deserialization=True
                 )
@@ -211,35 +211,34 @@ class HistoryRAG:
         results = self.search(query, k=k)
         if not results:
             return None
-        
+
         context_parts = []
         for r in results:
             context_parts.append(f"[历史对话 {r['conversation_id']}]\n{r['content']}")
-        
-        return "以下是之前对话中与当前问题相关的内容：\n\n" + "\n\n".join(context_parts)
+
+        return "以下是历史对话中与当前问题相关的内容：\n\n" + "\n\n".join(context_parts)
 
     def _get_context_with_llm(self, query: str, llm, k: int = 3) -> Optional[str]:
         if not llm:
             return None
-        
+
         conversations = conversation_manager.get_all_conversations()
         if not conversations:
             return None
-        
+
         conv_list = []
         for c in conversations:
             conv_list.append(f"- ID: {c['id']}, 名称: {c['name']}, 摘要: {c.get('summary', '无')}")
-        
+
         conv_list_str = "\n".join(conv_list[:20])
-        
+
         prompt = f"""当前问题：{query}
 
 历史对话列表：
 {conv_list_str}
 
-请选择与当前问题最相关的最多 {k} 个对话，返回对话ID列表（用逗号分隔）。
-只返回ID，不要有其他内容。"""
-        
+请选择与当前问题最相关的最多{k}个对话，返回对话ID列表（用逗号分隔）。只返回ID，不要有其他内容。"""
+
         try:
             response = llm.invoke(prompt)
             selected_ids = [s.strip() for s in response.content.split(",") if s.strip()]
@@ -247,7 +246,7 @@ class HistoryRAG:
         except Exception as e:
             print(f"LLM 选择历史对话失败: {str(e)}")
             return None
-        
+
         context_parts = []
         for conv_id in selected_ids:
             conv_data = conversation_manager.load_conversation(conv_id)
@@ -255,11 +254,11 @@ class HistoryRAG:
                 messages = conv_data["messages"][-6:]
                 content = "\n".join([f"{m['role']}: {m['content'][:200]}" for m in messages if m.get("content")])
                 context_parts.append(f"[历史对话 {conv_data.get('name', conv_id)}]\n{content}")
-        
+
         if not context_parts:
             return None
-        
-        return "以下是之前对话中与当前问题相关的内容：\n\n" + "\n\n".join(context_parts)
+
+        return "以下是历史对话中与当前问题相关的内容：\n\n" + "\n\n".join(context_parts)
 
 
 history_rag = HistoryRAG()

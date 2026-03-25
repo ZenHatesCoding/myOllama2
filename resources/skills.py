@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-PROJECT_ROOT = Path(__file__).parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
 class Skill:

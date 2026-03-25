@@ -99,14 +99,14 @@ class ScreenshotSelector:
         self.root.quit()
 
 
-def take_screenshot():
+def main():
     selector = ScreenshotSelector()
-    return selector.select_region()
-
-
-if __name__ == "__main__":
-    result = take_screenshot()
+    result = selector.select_region()
     if result:
         print(result['data'])
     else:
         print("CANCELLED")
+
+
+if __name__ == "__main__":
+    main()

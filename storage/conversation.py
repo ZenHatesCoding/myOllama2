@@ -11,6 +11,7 @@ class ConversationManager:
     def __init__(self, base_dir: str = None):
         if base_dir is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
+            base_dir = os.path.dirname(base_dir)
         
         self.base_dir = base_dir
         self.conversations_dir = os.path.join(base_dir, "conversations")

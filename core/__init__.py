@@ -1,5 +1,5 @@
-from models import AppState
-from skill_registry import skill_registry
+from core.models import AppState
+from resources.skills import skill_registry
 
 _state = None
 

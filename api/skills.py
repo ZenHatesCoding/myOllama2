@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from skill_registry import skill_registry
+from resources.skills import skill_registry
 
 skills_bp = Blueprint('skills', __name__)
 

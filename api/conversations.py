@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from extensions import state
+from core import state
 
 conversations_bp = Blueprint('conversations', __name__)
 

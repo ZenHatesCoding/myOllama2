@@ -49,49 +49,58 @@ myOllama/
 ├── routes.py                 # 路由注册
 ├── api/                      # API 模块
 │   ├── __init__.py
-│   ├── conversations.py        # 对话管理
-│   ├── documents.py           # 文档上传/删除
-│   ├── images.py              # 图片上传/删除/截图
-│   ├── chat.py                # 消息生成/停止/流式传输/状态
-│   ├── skills.py              # 技能管理
-│   └── config.py              # 配置管理
+│   ├── conversations.py      # 对话管理
+│   ├── documents.py          # 文档上传/删除
+│   ├── images.py             # 图片上传/删除/截图
+│   ├── chat.py               # 消息生成/停止/流式传输/状态
+│   ├── skills.py             # 技能管理
+│   └── config.py             # 配置管理
 ├── agent/                    # Agent 模块
 │   ├── __init__.py
-│   ├── intent.py              # 意图检测
-│   ├── nodes.py               # 节点函数
-│   ├── graph.py               # 图构建
-│   └── stream.py              # 流式接口
+│   ├── intent.py             # 意图检测
+│   ├── nodes.py              # 节点函数
+│   ├── graph.py              # 图构建
+│   └── stream.py             # 流式接口
 ├── tools/                    # 工具模块
 │   ├── __init__.py
-│   ├── builtin.py             # 内置工具（Read/Write/Bash/Glob/Grep）
-│   ├── news.py                # 新闻工具
-│   ├── document.py            # 文档工具
-│   └── skill.py               # Skill 工具
-├── graph.py                  # GraphState 定义
-├── models.py                 # 数据模型
-├── extensions.py             # 状态管理
-├── llm_factory.py            # LLM 工厂
-├── conversation_manager.py   # 对话管理
-├── history_rag.py            # 历史检索
-├── retriever.py              # 检索器
-├── resources.py              # 资源注册
-├── skill_registry.py          # Skill 注册表
-├── utils.py                  # 工具函数
-├── config_manager.py          # 配置管理
-├── screenshot.py             # 截图功能
+│   ├── builtin.py            # 内置工具（Read/Write/Bash/Glob/Grep）
+│   ├── news.py               # 新闻工具
+│   ├── document.py           # 文档工具
+│   └── skill.py              # Skill 工具
+├── core/                     # 核心模块
+│   ├── __init__.py           # 状态管理
+│   ├── models.py             # 数据模型（Message, Conversation, AppState）
+│   └── graph.py              # GraphState 定义
+├── config/                   # 配置模块
+│   ├── manager.py            # 配置加载/保存
+│   └── context.py            # 模型上下文配置
+├── storage/                  # 存储模块
+│   ├── conversation.py       # 对话持久化
+│   ├── history_rag.py        # 历史 RAG 检索
+│   └── retriever.py          # 文档检索器
+├── document/                  # 文档模块
+│   └── loader.py             # 文档加载/处理
+├── llm/                      # LLM 模块
+│   ├── factory.py            # LLM 工厂
+│   └── helpers.py            # LLM 辅助函数
+├── resources/                # 资源模块
+│   ├── base.py               # 资源基类
+│   └── skills.py             # Skill 注册表
+├── utils/                    # 工具模块
+│   ├── image.py              # 图像处理
+│   ├── messages.py           # 消息准备
+│   ├── conversation.py       # 对话工具
+│   ├── answer.py             # 生成回答
+│   └── screenshot.py         # 截图功能
 ├── static/                   # 静态资源
 │   ├── css/
 │   └── js/
 ├── templates/                # HTML 模板
 ├── skills/                   # Skill 目录
 ├── conversations/            # 对话存储
-├── mcp/                     # MCP 模块
-│   ├── __init__.py
-│   ├── base.py
-│   ├── manager.py
-│   └── news_mcp.py
 └── doc/                      # 文档
     ├── 开发记录.md
+```
     ├── Skill工作流程.md
     ├── PRD_Skill支持.md
     ├── MCP使用说明.md

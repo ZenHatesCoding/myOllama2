@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
-from extensions import state
-from config_manager import load_config, save_config
+from core import state
+from config.manager import load_config, save_config
 
 config_bp = Blueprint('config', __name__)
 

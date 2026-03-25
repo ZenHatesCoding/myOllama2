@@ -1,17 +1,17 @@
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_ollama import ChatOllama
-from graph import GraphState, decide_disclosure_level, DISCLOSURE_LEVELS
+from core.graph import GraphState, decide_disclosure_level, DISCLOSURE_LEVELS
 from tools.news import news_toolkit
 from tools.document import get_document_summary, get_document_outline
 from tools import get_builtin_tools
-from extensions import state as app_state
-from llm_factory import create_llm
-from retriever import create_retriever
-from history_rag import history_rag
+from core import state as app_state
+from llm.factory import create_llm
+from storage.retriever import create_retriever
+from storage.history_rag import history_rag
 from agent.intent import build_tools_schema, detect_tool_intent
-from utils import prepare_messages
-from skill_registry import skill_registry
+from utils.messages import prepare_messages
+from resources.skills import skill_registry
 
 
 def node_classify_intent(state: GraphState) -> dict:

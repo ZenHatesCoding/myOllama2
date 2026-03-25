@@ -31,12 +31,12 @@ class DocumentResource(BaseResource):
         return "document"
     
     def is_available(self) -> bool:
-        from extensions import state
+        from core import state
         conversation = state.get_current_conversation()
         return bool(conversation and conversation.document_chunks)
     
     def load(self, strategy: str, params: Dict[str, Any]) -> LoadResult:
-        from extensions import state
+        from core import state
         conversation = state.get_current_conversation()
         
         if not conversation or not conversation.document_chunks:
