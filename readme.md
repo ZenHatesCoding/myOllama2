@@ -1,5 +1,7 @@
 # MyOllama
 
+**版本: v1.8.2**
+
 基于 Flask、LangGraph 和 Ollama（或 OpenAI/Anthropic 兼容 API）的智能对话助手。
 
 ## 功能特性

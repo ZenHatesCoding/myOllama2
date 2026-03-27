@@ -299,7 +299,7 @@ A: MCP 工具通过 QA 模式的 `classify_intent` 节点被调用，使用 LLM 
 
 ## 更新日志
 
-### v7.0.0
+### 1.7.0
 - MCP 工具集成到 LangGraph 工作流
 - 新增文档工具（get_document_summary, get_document_outline）
 - LLM 意图识别 + 自动工具调用
