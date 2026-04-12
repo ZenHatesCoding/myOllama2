@@ -4,6 +4,7 @@ from langchain_ollama import ChatOllama
 from core.graph import GraphState, decide_disclosure_level, DISCLOSURE_LEVELS
 from tools.news import news_toolkit
 from tools.document import get_document_summary, get_document_outline
+from tools.ai_news_daily import get_ai_news_daily
 from tools import get_builtin_tools
 from core import state as app_state
 from llm.factory import create_llm
@@ -63,7 +64,7 @@ def node_classify_intent(state: GraphState) -> dict:
     if intent and intent.get("need_tool"):
         tool_name = intent.get("tool_name")
         parameters = intent.get("parameters", {})
-        
+
         result = None
         if tool_name == "get_headlines":
             result = news_toolkit.get_headlines(parameters.get("page_size", 10))
@@ -77,6 +78,8 @@ def node_classify_intent(state: GraphState) -> dict:
                 parameters.get("keyword", ""),
                 parameters.get("page_size", 10)
             )
+        elif tool_name == "get_ai_news_daily":
+            result = {"success": True, "tool_name": tool_name, "formatted_text": get_ai_news_daily.invoke({})}
         elif tool_name == "get_document_summary":
             n_chunks = level_config.get("n_chunks", 30)
             result = {"success": True, "tool_name": tool_name, "formatted_text": get_document_summary.invoke({"n_chunks": n_chunks})}
@@ -188,7 +191,7 @@ def node_generate_response(state: GraphState) -> dict:
     history_context = state.get("history_context", "")
     skill_context = state.get("skill_context")
     
-    news_tools = ["get_headlines", "get_news_by_type", "search_news"]
+    news_tools = ["get_headlines", "get_news_by_type", "search_news", "get_ai_news_daily"]
     document_tools_list = ["get_document_summary", "get_document_outline"]
     
     if mcp_result and mcp_result.get("success"):
@@ -199,7 +202,8 @@ def node_generate_response(state: GraphState) -> dict:
             tool_display_names = {
                 "get_headlines": "头条新闻",
                 "get_news_by_type": "分类新闻",
-                "search_news": "新闻搜索"
+                "search_news": "新闻搜索",
+                "get_ai_news_daily": "AI 新闻日报"
             }
             tool_display_name = tool_display_names.get(tool_name, tool_name)
             full_text = f"📰 正在从{tool_display_name}获取信息...\n\n{formatted_text}"

@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from tools.news import get_all_tools
 from tools.document import document_tools
+from tools.ai_news_daily import get_ai_news_daily
 from resources.skills import skill_registry
 
 
@@ -127,7 +128,7 @@ def detect_tool_intent(llm, query: str, tools_schema: str) -> Optional[Dict[str,
 
 
 def build_tools_schema() -> str:
-    tools = get_all_tools() + document_tools
+    tools = get_all_tools() + document_tools + [get_ai_news_daily]
     schema = "可用工具列表：\n\n"
     for tool in tools:
         schema += f"工具名称: {tool.name}\n"

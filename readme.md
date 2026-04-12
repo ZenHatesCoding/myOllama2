@@ -67,6 +67,7 @@ myOllama/
 │   ├── __init__.py
 │   ├── builtin.py            # 内置工具（Read/Write/Bash/Glob/Grep）
 │   ├── news.py               # 新闻工具
+│   ├── ai_news_daily.py     # AI新闻日报工具（RSS聚合）
 │   ├── document.py           # 文档工具
 │   └── skill.py              # Skill 工具
 ├── core/                     # 核心模块
@@ -104,8 +105,7 @@ myOllama/
     ├── 开发记录.md
     ├── Skill工作流程.md
     ├── PRD_Skill支持.md
-    ├── MCP使用说明.md
-    └── debug.md
+    └── MCP使用说明.md
 ```
 
 ## 架构设计
@@ -298,6 +298,7 @@ def decide_disclosure_level(query: str) -> str:
 | `get_headlines` | NewsMCP | 获取头条新闻 |
 | `get_news_by_type` | NewsMCP | 按分类获取新闻 |
 | `search_news` | NewsMCP | 关键词搜索新闻 |
+| `get_ai_news_daily` | AiNewsDaily | AI 新闻日报（RSS 聚合） |
 | `get_document_summary` | DocumentTool | 获取文档摘要 |
 | `get_document_outline` | DocumentTool | 获取文档大纲 |
 
@@ -416,7 +417,6 @@ description: 将 PDF 论文转换为 Org 格式进行分析。当你需要分析
 - [Skill 工作流程](doc/Skill工作流程.md) - Skill 系统使用说明
 - [PRD_Skill支持](doc/PRD_Skill支持.md) - Skill 需求文档
 - [MCP使用说明](doc/MCP使用说明.md) - MCP 工具系统说明
-- [debug.md](doc/debug.md) - 调试指南
 
 ## 许可证
 

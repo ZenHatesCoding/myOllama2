@@ -197,6 +197,19 @@ mcp_manager.register_mcp(NewsMCP(api_key="your_juhe_api_key_here"))
 | `get_document_summary` | 获取文档摘要 | `n_chunks` (可选) |
 | `get_document_outline` | 获取文档大纲 | 无 |
 
+### AI 新闻日报（RSS 聚合）
+
+| 工具名称 | 功能 | 参数 |
+|---------|------|------|
+| `get_ai_news_daily` | 获取 AI 新闻日报 | 无 |
+
+AI 新闻日报从以下 RSS 源聚合新闻：
+- TechCrunch AI
+- The Verge AI
+- Hacker News
+
+每条新闻会使用 LLM 生成中文摘要。
+
 ## 演示数据模式
 
 如果没有配置 API 密钥，系统会自动使用演示数据模式，返回模拟的新闻数据。
